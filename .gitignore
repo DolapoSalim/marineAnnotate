@@ -1,0 +1,111 @@
+# =========================
+# ENV FILES (VERY IMPORTANT)
+# =========================
+.env
+.env.*
+!env.example
+
+# =========================
+# PYTHON (Backend)
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyc
+*.pkl
+
+.venv/
+venv/
+env/
+*.example
+*.egg-info/
+dist/
+build/
+
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# FastAPI / SQLAlchemy / Alembic
+alembic/versions/*.pyc
+alembic/__pycache__/
+
+# =========================
+# NODE (Frontend)
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+dist/
+build/
+.vite/
+
+# =========================
+# DOCKER
+# =========================
+*.log
+
+# Docker volumes (if accidentally created locally)
+postgres-data/
+pgdata/
+redis-data/
+
+# =========================
+# DATABASE FILES
+# =========================
+*.sqlite
+*.db
+
+# =========================
+# IDEs (VS Code included)
+# =========================
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# TEST / COVERAGE
+# =========================
+.coverage
+htmlcov/
+.pytest_cache/
+
+# =========================
+# LOGS
+# =========================
+logs/
+*.log
+
+# =========================
+# ML / DATA (if used in your project)
+# =========================
+*.h5
+*.pt
+*.pth
+*.onnx
+*.ckpt
+
+datasets/
+data/
+storage/images/
+storage/models/
+
+# =========================
+# DOCKER COMPOSE OVERRIDES
+# =========================
+docker-compose.override.yml

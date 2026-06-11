@@ -47,7 +47,7 @@ FRONTEND_PID=$!
 
 cd ..
 
-echo -e "\n${GREEN} MarineAnnotate is running!${NC}"
+echo -e "\n${GREEN}✅ MarineAnnotate is running!${NC}"
 echo -e "   Frontend  → ${BLUE}http://localhost:5173${NC}"
 echo -e "   API       → ${BLUE}http://localhost:8000${NC}"
 echo -e "   API docs  → ${BLUE}http://localhost:8000/docs${NC}"

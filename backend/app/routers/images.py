@@ -1,9 +1,12 @@
-import os
+"""
+Images router — patched for:
+- Fix 2: path traversal via safe upload utilities
+- Fix 8: chunked streaming instead of read() all at once
+"""
 import uuid
 from pathlib import Path
 from typing import Annotated
 
-import aiofiles
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from PIL import Image as PILImage
@@ -13,16 +16,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import CurrentUserID
+from app.core.uploads import (
+    IMAGE_EXTENSIONS,
+    _safe_extension,
+    _verify_image_magic,
+    safe_image_path,
+    stream_to_disk,
+)
 from app.crud import get_image, list_images
 from app.models import Image, ImageBatch, ImageStatus, ProjectMember
 from app.schemas import ImageAssign, ImageResponse
 
 router = APIRouter(prefix="/api/batches", tags=["images"])
-
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/tiff", "image/webp"}
 THUMB_SIZE = (256, 256)
+MAX_BYTES = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+ALLOWED_CONTENT_TYPES = {
+    "image/jpeg", "image/png", "image/tiff", "image/webp",
+}
 
 
 async def _check_batch_access(batch_id: int, user_id: int, db: AsyncSession) -> ImageBatch:
@@ -74,29 +86,40 @@ async def upload_images(
 ) -> dict:
     await _check_batch_access(batch_id, user_id, db)
 
-    images_dir = Path(settings.IMAGES_PATH) / str(batch_id)
-    thumbs_dir = images_dir / "thumbnails"
-    images_dir.mkdir(parents=True, exist_ok=True)
+    storage_root = Path(settings.IMAGES_PATH)
+    thumbs_dir = storage_root / str(batch_id) / "thumbnails"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
 
     created = []
     for upload in files:
-        if upload.content_type not in ALLOWED_TYPES:
+        # 1. Validate declared content-type (first guard)
+        if upload.content_type not in ALLOWED_CONTENT_TYPES:
             continue
-        content = await upload.read()
-        if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+
+        # 2. Validate extension against whitelist (Fix 2)
+        try:
+            ext = _safe_extension(upload.filename or "upload.jpg", IMAGE_EXTENSIONS)
+        except HTTPException:
             continue
 
         file_id = uuid.uuid4().hex
-        ext = Path(upload.filename or "image.jpg").suffix.lower()
-        filename = f"{file_id}{ext}"
-        filepath = images_dir / filename
+        filepath = safe_image_path(storage_root, batch_id, file_id, ext)
         thumbpath = thumbs_dir / f"{file_id}_thumb.jpg"
 
-        async with aiofiles.open(filepath, "wb") as f:
-            await f.write(content)
+        # 3. Stream to disk in chunks — never buffers full file (Fix 8)
+        try:
+            file_size = await stream_to_disk(upload, filepath, MAX_BYTES)
+        except HTTPException:
+            continue
 
-        # Generate thumbnail + get dimensions
+        # 4. Verify magic bytes — prevents MIME type spoofing (Fix 2)
+        try:
+            await _verify_image_magic(filepath)
+        except HTTPException:
+            filepath.unlink(missing_ok=True)
+            continue
+
+        # 5. Generate thumbnail and get dimensions
         try:
             pil_img = PILImage.open(filepath)
             width, height = pil_img.size
@@ -105,18 +128,20 @@ async def upload_images(
         except Exception:
             width, height = 0, 0
 
+        # 6. Store safe display name (not path-derived) in DB
+        safe_display_name = f"{file_id}{ext}"  # never store raw upload.filename as path component
         img = Image(
             batch_id=batch_id,
-            filename=upload.filename or filename,
+            filename=safe_display_name,
             storage_path=str(filepath),
             thumbnail_path=str(thumbpath),
             width=width,
             height=height,
-            file_size=len(content),
+            file_size=file_size,
             status=ImageStatus.PENDING,
         )
         db.add(img)
-        created.append(filename)
+        created.append(safe_display_name)
 
     await db.commit()
     return {"uploaded": len(created), "filenames": created}
@@ -149,16 +174,22 @@ async def assign_image(
     return {"assigned_to": payload.user_id}
 
 
-# Serve actual image files
+# ── File serving ──────────────────────────────────────────────────────────────
 images_router = APIRouter(prefix="/api/images", tags=["image-files"])
 
 
 @images_router.get("/{image_id}/file")
 async def serve_image(image_id: int, user_id: CurrentUserID, db: DbDep) -> FileResponse:
     img = await get_image(db, image_id)
-    if not img or not os.path.exists(img.storage_path):
+    p = Path(img.storage_path) if img else None
+    if not img or not p or not p.exists():
         raise HTTPException(status_code=404, detail="Image file not found")
-    return FileResponse(img.storage_path)
+    # Safety: confirm path is within storage root
+    try:
+        p.resolve().relative_to(Path(settings.IMAGES_PATH).resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return FileResponse(str(p))
 
 
 @images_router.get("/{image_id}/thumbnail")
@@ -166,5 +197,11 @@ async def serve_thumbnail(image_id: int, user_id: CurrentUserID, db: DbDep) -> F
     img = await get_image(db, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
-    path = img.thumbnail_path if img.thumbnail_path and os.path.exists(img.thumbnail_path) else img.storage_path
-    return FileResponse(path)
+    p = Path(img.thumbnail_path) if img.thumbnail_path else None
+    if not p or not p.exists():
+        p = Path(img.storage_path)
+    try:
+        p.resolve().relative_to(Path(settings.IMAGES_PATH).resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return FileResponse(str(p))
