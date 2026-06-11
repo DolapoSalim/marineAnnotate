@@ -32,7 +32,7 @@ createdb -O marine marine_annotate
 
 Or with Docker:
 ```bash
-docker run -docker d --name marine-pg \
+docker run -d --name marine-pg \
   -e POSTGRES_USER=marine -e POSTGRES_PASSWORD=marine -e POSTGRES_DB=marine_annotate \
   -p 5432:5432 postgres:16-alpine
 ```

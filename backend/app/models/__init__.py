@@ -82,8 +82,8 @@ class User(Base):
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     memberships: Mapped[list[ProjectMember]] = relationship(back_populates="user")
-    annotations: Mapped[list[Annotation]] = relationship(back_populates="created_by_user")
-
+    annotations_created: Mapped[list[Annotation]] = relationship(foreign_keys="Annotation.created_by", back_populates="created_by_user")
+    annotations_reviewed: Mapped[list[Annotation]] = relationship(foreign_keys="Annotation.reviewed_by", back_populates="reviewed_by_user")
 
 class Project(Base):
     __tablename__ = "projects"
@@ -189,7 +189,8 @@ class Annotation(Base):
 
     image: Mapped[Image] = relationship(back_populates="annotations")
     label_class: Mapped[LabelClass] = relationship(back_populates="annotations")
-    created_by_user: Mapped[User] = relationship(foreign_keys=[created_by], back_populates="annotations")
+    created_by_user: Mapped[User] = relationship(foreign_keys=[created_by], back_populates="annotations_created")
+    reviewed_by_user: Mapped[User] = relationship(foreign_keys=[reviewed_by], back_populates="annotations_reviewed")
     history: Mapped[list[AnnotationHistory]] = relationship(back_populates="annotation", cascade="all, delete-orphan")
 
 

@@ -1,3 +1,11 @@
+"""
+MarineAnnotate API — main application entry point.
+Security patches applied:
+- Fix 7: minimal CORS (explicit methods + headers)
+- Fix 8: RequestSizeLimitMiddleware registered before CORS
+- Fix 9: docs/openapi disabled in production
+- SecurityHeadersMiddleware on all responses
+"""
 import os
 from contextlib import asynccontextmanager
 
@@ -6,20 +14,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import engine, Base
+from app.core.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import auth, users, projects, annotations, ai, export, websocket
 from app.routers.images import router as images_router, images_router as files_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Seed first admin user if DB is empty
     await _seed_admin()
 
-    # Create storage dirs
     os.makedirs(settings.IMAGES_PATH, exist_ok=True)
     os.makedirs(settings.MODELS_PATH, exist_ok=True)
 
@@ -47,22 +53,33 @@ async def _seed_admin() -> None:
             print(f"✅ Admin user seeded: {settings.FIRST_ADMIN_EMAIL}")
 
 
+# Fix 9: disable docs in production
 app = FastAPI(
     title="MarineAnnotate API",
     description="In-house annotation platform for underwater marine imagery",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
+# Fix 8: size limit FIRST (before CORS, before routing)
+app.add_middleware(RequestSizeLimitMiddleware)
+
+# Security headers on all responses
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Fix 7: minimal explicit CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    max_age=600,
 )
 
-# Routers
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(projects.router)
@@ -76,4 +93,5 @@ app.include_router(websocket.router)
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": "1.0.0"}
+    # Fix 9: no version leak in production
+    return {"status": "ok"}
