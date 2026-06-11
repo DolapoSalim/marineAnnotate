@@ -1,8 +1,16 @@
 {
   "dependencies": {
-    "use-image": "^1.1.4"
+    "@tanstack/react-query": "^5.101.0",
+    "axios": "^1.17.0",
+    "konva": "^10.3.0",
+    "lucide-react": "^1.17.0",
+    "react-konva": "^19.2.5",
+    "react-router-dom": "^7.17.0",
+    "use-image": "^1.1.4",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "typescript": "^6.0.3",
     "vite": "^8.0.16"
   }
 }
