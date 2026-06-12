@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -22,27 +22,23 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: str) -> str:
-    """Short-lived access token (15 min default)."""
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
-    jti = uuid4().hex
-    payload = {"sub": subject, "exp": expire, "jti": jti, "type": "access"}
+    payload = {"sub": subject, "exp": expire, "jti": uuid4().hex, "type": "access"}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def create_refresh_token(subject: str) -> str:
-    """Long-lived refresh token (7 days default), stored as HttpOnly cookie."""
     expire = datetime.now(timezone.utc) + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
-    jti = uuid4().hex
-    payload = {"sub": subject, "exp": expire, "jti": jti, "type": "refresh"}
+    payload = {"sub": subject, "exp": expire, "jti": uuid4().hex, "type": "refresh"}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-async def _decode_token(token: str, expected_type: str) -> dict:
-    """Decode and validate a JWT, checking type and revocation list."""
+def _decode_jwt(token: str) -> dict:
+    """Decode and return payload — raises 401 on any failure."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -52,35 +48,56 @@ async def _decode_token(token: str, expected_type: str) -> dict:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-        if payload.get("type") != expected_type:
-            raise credentials_exception
         subject: str | None = payload.get("sub")
-        jti: str | None = payload.get("jti")
-        if subject is None or jti is None:
+        if subject is None:
             raise credentials_exception
-
-        # Check revocation list in Redis
-        try:
-            from app.core.redis import redis_client
-            if await redis_client.get(f"revoked:{jti}"):
-                raise credentials_exception
-        except ImportError:
-            pass  # Redis optional during testing
-
-        return {"user_id": int(subject), "jti": jti}
-    except (JWTError, ValueError):
+        return payload
+    except JWTError:
         raise credentials_exception
 
 
 async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> int:
-    data = await _decode_token(token, expected_type="access")
-    return data["user_id"]
+    """Dependency for all protected routes — validates access token."""
+    payload = _decode_jwt(token)
+    # Accept both typed tokens and legacy tokens without type field
+    # (graceful during transition)
+    token_type = payload.get("type")
+    if token_type is not None and token_type != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token subject")
+
+    # Check revocation list (non-fatal if Redis is unavailable)
+    jti = payload.get("jti")
+    if jti:
+        try:
+            from app.core.redis import redis_client
+            if await redis_client.get(f"revoked:{jti}"):
+                raise HTTPException(status_code=401, detail="Token has been revoked")
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # Redis unavailable — allow request through
+
+    return user_id
 
 
 async def get_current_user_id_from_refresh(token: str) -> tuple[int, str]:
-    """Returns (user_id, jti) for refresh endpoint."""
-    data = await _decode_token(token, expected_type="refresh")
-    return data["user_id"], data["jti"]
+    """Validate a refresh token — used only by /auth/refresh endpoint."""
+    payload = _decode_jwt(token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    jti = payload.get("jti", "")
+    try:
+        return int(payload["sub"]), jti
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token subject")
 
 
 CurrentUserID = Annotated[int, Depends(get_current_user_id)]
