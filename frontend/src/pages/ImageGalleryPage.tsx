@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, CheckCircle, Clock, Eye, AlertCircle, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, Clock, Eye, AlertCircle } from 'lucide-react';
+import { ImageThumbnail } from '../components/ImageThumbnail';
 import { imagesApi, projectsApi } from '../api';
 import type { AnnotationImage, ImageBatch } from '../types';
 
@@ -182,16 +183,9 @@ export const ImageGalleryPage: React.FC = () => {
                 >
                   {/* Thumbnail */}
                   <div style={{ width: '100%', paddingBottom: '75%', position: 'relative', background: '#0a1220' }}>
-                    <img
-                      src={`/api/images/${img.id}/thumbnail`}
+                    <ImageThumbnail
+                      thumbnailUrl={img.thumbnail_url}
                       alt={img.filename}
-                      style={{
-                        position: 'absolute', inset: 0, width: '100%', height: '100%',
-                        objectFit: 'cover',
-                      }}
-                      onError={e => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
                     />
                     {/* Status badge */}
                     <div style={{
