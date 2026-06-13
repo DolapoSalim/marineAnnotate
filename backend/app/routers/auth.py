@@ -13,12 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    get_current_user_id,
-    get_current_user_id_from_refresh,
-    verify_password,
-    CurrentUserID,
+    create_access_token, create_refresh_token,
+    get_current_user_id_from_refresh, verify_password, CurrentUserID,
 )
 from app.core.config import settings
 from app.crud import get_user_by_email, get_user
@@ -27,27 +23,33 @@ from app.schemas import Token, UserResponse
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
-# ── Rate limiting (Fix 3) ─────────────────────────────────────────────────────
-try:
-    from slowapi import Limiter
-    from slowapi.util import get_remote_address
-    _limiter = Limiter(key_func=get_remote_address)
 
-    def _rate_limit(request: Request):
-        pass  # placeholder; decorator applied below
-
-    USE_RATE_LIMIT = True
-except ImportError:
-    USE_RATE_LIMIT = False
+async def _check_rate_limit(request: Request, email: str) -> None:
+    """Simple Redis-based rate limit: max 10 login attempts per IP per 15 min."""
+    try:
+        from app.core.redis import redis_client
+        ip = request.client.host if request.client else "unknown"
+        key = f"login_attempts:{ip}"
+        count = await redis_client.incr(key)
+        if count == 1:
+            await redis_client.expire(key, 900)
+        if count > 10:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Please wait 15 minutes.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Redis unavailable — allow through
 
 
 async def _track_failed_attempt(email: str) -> None:
-    """Track consecutive failures per email in Redis; lock after 10."""
     try:
         from app.core.redis import redis_client
         key = f"login_fail:{email}"
         count = await redis_client.incr(key)
-        await redis_client.expire(key, 900)  # 15-minute window
+        await redis_client.expire(key, 900)
         if count >= 10:
             await redis_client.setex(f"login_lock:{email}", 900, "1")
     except Exception:
@@ -70,8 +72,6 @@ async def _clear_failed_attempts(email: str) -> None:
         pass
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
 @router.post("/token", response_model=Token)
 async def login(
     request: Request,
@@ -79,9 +79,7 @@ async def login(
     response: Response,
     db: DbDep,
 ) -> Token:
-    # Rate limit: 10 attempts per IP per minute
-    if USE_RATE_LIMIT:
-        await _limiter._check_request_limit(request, "10/minute")  # type: ignore[attr-defined]
+    await _check_rate_limit(request, form.username)
 
     email = form.username.lower().strip()
 
@@ -107,9 +105,7 @@ async def login(
     user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
-    # Short-lived access token in response body
     access_token = create_access_token(str(user.id))
-    # Long-lived refresh token as HttpOnly cookie (not accessible to JS)
     refresh_token = create_refresh_token(str(user.id))
     response.set_cookie(
         key="refresh_token",
@@ -130,13 +126,11 @@ async def refresh_access_token(
     db: DbDep,
     refresh_token: str | None = Cookie(default=None),
 ) -> Token:
-    """Exchange refresh cookie for a new access token."""
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token")
 
     user_id, old_jti = await get_current_user_id_from_refresh(refresh_token)
 
-    # Revoke old refresh token
     try:
         from app.core.redis import redis_client
         await redis_client.setex(
@@ -151,7 +145,6 @@ async def refresh_access_token(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or disabled")
 
-    # Issue new tokens (rotation)
     new_access = create_access_token(str(user_id))
     new_refresh = create_refresh_token(str(user_id))
     response.set_cookie(
@@ -172,7 +165,6 @@ async def logout(
     user_id: CurrentUserID,
     refresh_token: str | None = Cookie(default=None),
 ) -> None:
-    """Revoke refresh token and clear cookie."""
     if refresh_token:
         try:
             _, jti = await get_current_user_id_from_refresh(refresh_token)

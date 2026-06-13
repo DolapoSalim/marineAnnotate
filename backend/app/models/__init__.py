@@ -82,7 +82,7 @@ class User(Base):
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     memberships: Mapped[list[ProjectMember]] = relationship(back_populates="user")
-    annotations: Mapped[list[Annotation]] = relationship(back_populates="created_by_user")
+    annotations: Mapped[list[Annotation]] = relationship(back_populates="created_by_user", foreign_keys="[Annotation.created_by]")
 
 
 class Project(Base):

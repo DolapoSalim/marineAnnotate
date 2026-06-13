@@ -22,3 +22,5 @@ pytest==8.2.0
 pytest-asyncio==0.23.7
 slowapi==0.1.9
 python-slugify==8.0.4
+pydantic>=2.0
+pydantic[email]>=2.0

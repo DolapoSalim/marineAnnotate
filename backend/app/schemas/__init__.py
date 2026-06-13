@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_config
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models import (
     AnnotationStatus, AnnotationType, ImageStatus,
@@ -14,7 +14,7 @@ from app.models import (
 # ── Shared ───────────────────────────────────────────────────────────────────
 
 class OrmBase(BaseModel):
-    model_config = model_config(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ class TokenData(BaseModel):
 # ── User ─────────────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
-    model_config = model_config(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True)
 
     email: EmailStr
     full_name: str = Field(min_length=2, max_length=255)

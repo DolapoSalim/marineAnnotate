@@ -214,7 +214,7 @@ export const AnnotationPage: React.FC = () => {
         <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
           {currentImage ? (
             <AnnotationCanvas
-              imageUrl={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${currentImage.image_url}`}
+              imageUrl={currentImage.image_url || ""}
               imageWidth={currentImage.width}
               imageHeight={currentImage.height}
               annotations={annotations}
