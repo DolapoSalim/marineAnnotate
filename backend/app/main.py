@@ -1,11 +1,3 @@
-"""
-MarineAnnotate API — main application entry point.
-Security patches applied:
-- Fix 7: minimal CORS (explicit methods + headers)
-- Fix 8: RequestSizeLimitMiddleware registered before CORS
-- Fix 9: docs/openapi disabled in production
-- SecurityHeadersMiddleware on all responses
-"""
 import os
 from contextlib import asynccontextmanager
 
@@ -17,18 +9,16 @@ from app.core.database import engine, Base
 from app.core.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import auth, users, projects, annotations, ai, export, websocket
 from app.routers.images import router as images_router, images_router as files_router
+from app.routers.invites import router as invites_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
     await _seed_admin()
-
     os.makedirs(settings.IMAGES_PATH, exist_ok=True)
     os.makedirs(settings.MODELS_PATH, exist_ok=True)
-
     yield
 
 
@@ -41,22 +31,17 @@ async def _seed_admin() -> None:
     async with AsyncSessionLocal() as db:
         existing = await get_user_by_email(db, settings.FIRST_ADMIN_EMAIL)
         if not existing:
-            await create_user(
-                db,
-                UserCreate(
-                    email=settings.FIRST_ADMIN_EMAIL,
-                    full_name="Lab Admin",
-                    password=settings.FIRST_ADMIN_PASSWORD,
-                    role=UserRole.ADMIN,
-                ),
-            )
+            await create_user(db, UserCreate(
+                email=settings.FIRST_ADMIN_EMAIL,
+                full_name="Lab Admin",
+                password=settings.FIRST_ADMIN_PASSWORD,
+                role=UserRole.ADMIN,
+            ))
             print(f"✅ Admin user seeded: {settings.FIRST_ADMIN_EMAIL}")
 
 
-# Fix 9: disable docs in production
 app = FastAPI(
     title="MarineAnnotate API",
-    description="In-house annotation platform for underwater marine imagery",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.DEBUG else None,
@@ -64,13 +49,8 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
-# Fix 8: size limit FIRST (before CORS, before routing)
 app.add_middleware(RequestSizeLimitMiddleware)
-
-# Security headers on all responses
 app.add_middleware(SecurityHeadersMiddleware)
-
-# Fix 7: minimal explicit CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -89,9 +69,9 @@ app.include_router(annotations.router)
 app.include_router(ai.router)
 app.include_router(export.router)
 app.include_router(websocket.router)
+app.include_router(invites_router)
 
 
 @app.get("/health")
 async def health() -> dict:
-    # Fix 9: no version leak in production
     return {"status": "ok"}

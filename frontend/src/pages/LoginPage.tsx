@@ -32,7 +32,7 @@ export const LoginPage: React.FC = () => {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       const meRes = await authApi.me();
       setAuth(meRes.data, token);
-      navigate('/');
+      navigate('/dashboard');
     } catch (err: any) {
       localStorage.removeItem('access_token');
       delete api.defaults.headers.common['Authorization'];

@@ -44,7 +44,7 @@ chmod +x start.sh
 ./start.sh
 ```
 
-Open **http://localhost:5173** 
+Open **http://localhost:5173** — default login: `admin@lab.local` / `changeme123`
 
 ---
 

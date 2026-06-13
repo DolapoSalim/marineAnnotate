@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, Plus, Bot, Download, Users } from 'lucide-react';
+import { ExportModal } from '../components/ExportModal';
 import { projectsApi, imagesApi, exportApi } from '../api';
 import { useProjectStore } from '../store';
 import type { Project, ImageBatch, LabelClass, MLModel, AIJob } from '../types';
@@ -173,7 +174,7 @@ export const ProjectPage: React.FC = () => {
                       <Upload size={14} />
                     </button>
                     {/* Annotate */}
-                    <button onClick={() => navigate(`/projects/${id}/batches/${b.id}/annotate`)} style={smPrimary}>
+                    <button onClick={() => navigate(`/projects/${id}/batches/${b.id}/gallery`)} style={smPrimary}>
                       Annotate
                     </button>
                     {/* Run AI */}
