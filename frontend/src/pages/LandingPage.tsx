@@ -68,12 +68,12 @@ export const LandingPage: React.FC = () => {
   }, []);
 
   const features = [
-    { icon: '🎯', title: 'Precision Annotation', desc: 'Bounding boxes, polygons, keypoints and classification tags — all in one fluid canvas.' },
-    { icon: '🤖', title: 'AI-Assisted Labelling', desc: 'Upload your trained YOLO model and let AI suggest annotations. Review, edit, accept or reject in seconds.' },
-    { icon: '🔬', title: 'Marine Taxonomy', desc: 'Built-in species hierarchy support for seagrasses, macroalgae and fish — your domain, your structure.' },
-    { icon: '👥', title: 'Live Collaboration', desc: 'Multiple lab members annotate simultaneously. See each other\'s changes in real time.' },
-    { icon: '🔒', title: 'Fully Private', desc: 'All data stays on your lab server. Nothing leaves your network. Invite-only access.' },
-    { icon: '📦', title: 'Export Anywhere', desc: 'COCO JSON, YOLO, Pascal VOC, CSV. Drop straight into any training pipeline.' },
+    { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 3v6M15 3v6M9 15v6M15 15v6M3 9h6M3 15h6M15 9h6M15 15h6"/></svg>, title: 'Precision Annotation', desc: 'Bounding boxes, polygons, keypoints and classification tags — all in one fluid canvas.' },
+    { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>, title: 'AI-Assisted Labelling', desc: 'Upload your trained YOLO model and let AI suggest annotations. Review, edit, accept or reject in seconds.' },
+    { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18"/></svg>, title: 'Marine Taxonomy', desc: 'Species hierarchy support for seagrasses, macroalgae and fish — your domain, your structure.' },
+    { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>, title: 'Live Collaboration', desc: 'Multiple lab members annotate simultaneously. See changes in real time via WebSocket sync.' },
+    { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>, title: 'Fully Private', desc: 'All data stays on your lab server. Nothing leaves your network. Invite-only access.' },
+    { icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>, title: 'Export Anywhere', desc: 'COCO JSON, YOLO, Pascal VOC, CSV. Drop straight into any training pipeline.' },
   ];
 
   return (
@@ -96,7 +96,7 @@ export const LandingPage: React.FC = () => {
         position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center',
         padding: '20px 48px', borderBottom: '0.5px solid rgba(255,255,255,0.06)',
       }}>
-        <span style={{ fontSize: 24 }}>🐠</span>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" strokeWidth="2" strokeLinecap="round"><path d="M4 12 C4 6 8 3 14 3 C20 3 22 7 22 12 C22 17 20 21 14 21 C8 21 4 18 4 12Z"/><circle cx="9" cy="10" r="1.5" fill="#1D9E75" stroke="none"/><path d="M16 12 C18 10 21 11 22 12 C21 13 18 14 16 12Z" fill="#1D9E75" stroke="none"/></svg>
         <span style={{ marginLeft: 10, fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>MarineAnnotate</span>
         <div style={{ flex: 1 }} />
         <button onClick={() => navigate('/login')} style={{
@@ -188,7 +188,7 @@ export const LandingPage: React.FC = () => {
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(29,158,117,0.4)'; e.currentTarget.style.background = 'rgba(29,158,117,0.06)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
             >
-              <div style={{ fontSize: 28, marginBottom: 12 }}>{f.icon}</div>
+              <div style={{ marginBottom: 14, color: "#1D9E75" }}>{f.icon}</div>
               <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8, letterSpacing: '-0.3px' }}>{f.title}</h3>
               <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>{f.desc}</p>
             </div>
