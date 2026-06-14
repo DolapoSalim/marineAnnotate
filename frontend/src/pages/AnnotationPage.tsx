@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Square, Pentagon, MapPin, Tag, Hand,
-  ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, Bot,
+  ArrowLeft, Square, Pentagon, MapPin, Hand,
+  ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, Bot, Download,
 } from 'lucide-react';
 import { imagesApi, annotationsApi, projectsApi } from '../api';
 import { useCanvasStore, useProjectStore, useAuthStore } from '../store';
 import { useProjectWebSocket } from '../hooks/useWebSocket';
 import { AnnotationCanvas } from '../components/canvas/AnnotationCanvas';
+import { ExportModal } from '../components/ExportModal';
 import { AIReviewPanel } from '../components/sidebar/AIReviewPanel';
 import type { Annotation, AnnotationImage, LabelClass, WSEvent } from '../types';
 
@@ -22,6 +23,7 @@ export const AnnotationPage: React.FC = () => {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAIPanel, setShowAIPanel] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   const { labels, setLabels, activeLabelId, setActiveLabel } = useProjectStore();
   const { tool, setTool, setZoom, zoom, resetCanvas, selectedAnnotationId } = useCanvasStore();
@@ -175,6 +177,16 @@ export const AnnotationPage: React.FC = () => {
           </button>
         )}
 
+        <button
+          onClick={() => setShowExport(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px',
+            borderRadius: 7, border: '0.5px solid rgba(255,255,255,0.15)',
+            background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer',
+          }}
+        >
+          <Download size={13} /> Export
+        </button>
         <button onClick={markComplete} style={{
           padding: '6px 14px', borderRadius: 7, border: 'none',
           background: '#1D9E75', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer',
@@ -324,6 +336,14 @@ export const AnnotationPage: React.FC = () => {
           B=bbox · P=polygon · K=keypoint · V=select · ←→=navigate · Del=delete
         </span>
       </div>
+      {/* Export modal */}
+      {showExport && currentImage && (
+        <ExportModal
+          batchId={bid}
+          batchName={`Batch ${bid}`}
+          onClose={() => setShowExport(false)}
+        />
+      )}
     </div>
   );
 };

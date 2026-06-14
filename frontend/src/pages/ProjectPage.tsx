@@ -29,6 +29,7 @@ export const ProjectPage: React.FC = () => {
   const [newLabelColor, setNewLabelColor] = useState('#1D9E75');
   const [showNewLabel, setShowNewLabel] = useState(false);
   const [activeBatchId, setActiveBatchId] = useState<number | null>(null);
+  const [exportBatch, setExportBatch] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     setProject(id);
@@ -185,14 +186,13 @@ export const ProjectPage: React.FC = () => {
                       </button>
                     )}
                     {/* Export */}
-                    <div style={{ position: 'relative' }}>
-                      <button
-                        onClick={() => downloadExport(b.id, 'yolo')}
-                        style={iconBtn} title="Export YOLO"
-                      >
-                        <Download size={14} />
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => setExportBatch({ id: b.id, name: b.name })}
+                      style={{ ...iconBtn, color: '#1D9E75', borderColor: 'rgba(29,158,117,0.3)' }}
+                      title="Export annotations"
+                    >
+                      <Download size={14} />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -302,6 +302,15 @@ export const ProjectPage: React.FC = () => {
 
         {/* ── Members tab ── */}
         {tab === 'members' && <MembersTab projectId={id} />}
+
+      {/* Export modal */}
+      {exportBatch && (
+        <ExportModal
+          batchId={exportBatch.id}
+          batchName={exportBatch.name}
+          onClose={() => setExportBatch(null)}
+        />
+      )}
       </div>
     </div>
   );
