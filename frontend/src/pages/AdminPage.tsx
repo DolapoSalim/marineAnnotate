@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, Eye, Edit3, Send, UserX, UserCheck, Clock } from 'lucide-react';
+import { ArrowLeft, Shield, Eye, Edit3, Send, UserX, UserCheck, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Logo } from '../components/ui/Logo';
 import { usersApi, api } from '../api';
 import { useAuthStore } from '../store';
 import type { User, UserRole } from '../types';
@@ -57,6 +58,7 @@ export const AdminPage: React.FC = () => {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button onClick={() => navigate('/')} style={iconBtn}><ArrowLeft size={15} /></button>
+        <Logo size={24} showName={false} />
         <Shield size={16} style={{ color: '#EF9F27' }} />
         <span style={{ fontWeight: 600, fontSize: 14 }}>Admin Console</span>
         <div style={{ flex: 1 }} />
@@ -80,8 +82,8 @@ export const AdminPage: React.FC = () => {
             color: inviteStatus.type === 'success' ? '#1D9E75' : '#E24B4A',
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
-            {inviteStatus.type === 'success' ? '✓' : '✕'} {inviteStatus.msg}
-            <button onClick={() => setInviteStatus(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6 }}>✕</button>
+            {inviteStatus.type === 'success' ? <CheckCircle size={14} /> : <XCircle size={14} />} {inviteStatus.msg}
+            <button onClick={() => setInviteStatus(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, display: 'flex' }}><X size={14} /></button>
           </div>
         )}
 
