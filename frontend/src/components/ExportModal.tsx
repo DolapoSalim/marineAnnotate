@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, X, AlertCircle } from 'lucide-react';
+import { Download, X, AlertCircle, CheckCircle } from 'lucide-react';
 import { exportApi } from '../api';
 
 interface Props {
@@ -9,10 +9,11 @@ interface Props {
 }
 
 const FORMATS = [
-  { id: 'yolo',  label: 'YOLO TXT',      desc: 'Ultralytics YOLOv8/v9/v11 format — one .txt per image in a ZIP', ext: 'zip' },
-  { id: 'coco',  label: 'COCO JSON',     desc: 'MS COCO annotation schema — works with Detectron2, MMDetection', ext: 'json' },
-  { id: 'voc',   label: 'Pascal VOC',    desc: 'XML annotations per image in a ZIP — for legacy pipelines', ext: 'zip' },
-  { id: 'csv',   label: 'CSV Spreadsheet', desc: 'Flat spreadsheet with one row per annotation — for analysis', ext: 'csv' },
+  { id: 'yolo',     label: 'YOLO Detection',     desc: 'class cx cy w h (normalised). Use with: YOLOv8/v9/v11 train. Includes data.yaml.', ext: 'zip' },
+  { id: 'yolo_seg', label: 'YOLO Segmentation',  desc: 'Polygon points (normalised). Use with: yolo segment train. For instance segmentation.', ext: 'zip' },
+  { id: 'coco',     label: 'COCO JSON',           desc: 'Pixel-space bbox + segmentation. Use with: Detectron2, MMDetection, pycocotools.', ext: 'json' },
+  { id: 'voc',      label: 'Pascal VOC',          desc: 'Pixel-space xmin/ymin/xmax/ymax XML. Includes label_map.pbtxt for TF Object Detection API.', ext: 'zip' },
+  { id: 'csv',      label: 'CSV',                 desc: 'Normalised + pixel coords in one file. Use with: custom PyTorch/Keras Dataset classes.', ext: 'csv' },
 ];
 
 export const ExportModal: React.FC<Props> = ({ batchId, batchName, onClose }) => {
@@ -94,7 +95,7 @@ export const ExportModal: React.FC<Props> = ({ batchId, batchName, onClose }) =>
 
         {done && (
           <div style={{ textAlign: 'center', color: '#1D9E75', fontSize: 14, marginBottom: 16, fontWeight: 500 }}>
-            ✓ Download started!
+            <CheckCircle size={16} style={{ display: 'inline', marginRight: 6 }} /> Download started!
           </div>
         )}
 
