@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CheckCircle } from 'lucide-react';
 import { api } from '../api';
+import { Logo } from '../components/ui/Logo';
 
 export const AcceptInvitePage: React.FC = () => {
   const [params] = useSearchParams();
@@ -40,55 +42,74 @@ export const AcceptInvitePage: React.FC = () => {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0a1628 0%, #0b3d2e 100%)',
-      fontFamily: "'DM Sans', sans-serif",
+      background: 'linear-gradient(135deg, #030e0a 0%, #0a1628 100%)',
+      fontFamily: "'Inter', system-ui, sans-serif",
     }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
       <div style={{
-        background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.1)',
-        borderRadius: 16, padding: '40px 36px', width: 400, backdropFilter: 'blur(12px)',
+        background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.1)',
+        borderRadius: 16, padding: '40px 36px', width: 400,
       }}>
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>🐠</div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, color: '#fff', margin: 0 }}>Join MarineAnnotate</h1>
+        <div style={{ marginBottom: 28 }}>
+          <Logo size={32} showName={true} />
         </div>
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: '#fff', margin: '0 0 4px' }}>
+          Accept invitation
+        </h2>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', margin: '0 0 24px' }}>
+          Set your password to activate your account
+        </p>
 
-        {loading && <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>Validating invite…</div>}
+        {loading && (
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', padding: '20px 0' }}>
+            Validating invite…
+          </div>
+        )}
 
         {!loading && error && !invite && (
           <div style={{ textAlign: 'center' }}>
-            <div style={{ color: '#E24B4A', marginBottom: 16, fontSize: 14 }}>{error}</div>
+            <div style={{ color: '#f87171', marginBottom: 16, fontSize: 14 }}>{error}</div>
             <button onClick={() => navigate('/login')} style={primaryBtn}>Back to login</button>
           </div>
         )}
 
         {done && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <CheckCircle size={40} style={{ color: '#1D9E75', marginBottom: 12 }} />
             <div style={{ color: '#1D9E75', fontWeight: 500 }}>Account created! Redirecting to login…</div>
           </div>
         )}
 
         {!loading && invite && !done && (
           <>
-            <div style={{ background: 'rgba(29,158,117,0.1)', border: '0.5px solid rgba(29,158,117,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
-              Invited as <strong style={{ color: '#1D9E75' }}>{invite.email}</strong> · <span style={{ textTransform: 'capitalize' }}>{invite.role}</span>
+            <div style={{
+              background: 'rgba(29,158,117,0.1)', border: '0.5px solid rgba(29,158,117,0.3)',
+              borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: 'rgba(255,255,255,0.7)',
+            }}>
+              Invited as <strong style={{ color: '#1D9E75' }}>{invite.email}</strong>
+              {' · '}<span style={{ textTransform: 'capitalize' }}>{invite.role}</span>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={labelStyle}>Full name</label>
-                <input value={fullName} onChange={e => setFullName(e.target.value)} required style={inputStyle} placeholder="Your full name" />
+                <input value={fullName} onChange={e => setFullName(e.target.value)}
+                  required style={inputStyle} placeholder="Your full name" />
               </div>
               <div>
                 <label style={labelStyle}>Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} required style={inputStyle} placeholder="Min. 8 characters" />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  required style={inputStyle} placeholder="Minimum 8 characters" />
               </div>
               <div>
                 <label style={labelStyle}>Confirm password</label>
-                <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} required style={inputStyle} placeholder="Repeat password" />
+                <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+                  required style={inputStyle} placeholder="Repeat password" />
               </div>
-              {error && <div style={{ color: '#E24B4A', fontSize: 13 }}>{error}</div>}
+              {error && (
+                <div style={{ color: '#f87171', fontSize: 13, padding: '8px 12px', background: 'rgba(248,113,113,0.1)', borderRadius: 7 }}>
+                  {error}
+                </div>
+              )}
               <button type="submit" disabled={loading} style={{ ...primaryBtn, marginTop: 4 }}>
                 {loading ? 'Creating account…' : 'Create my account'}
               </button>
@@ -100,10 +121,12 @@ export const AcceptInvitePage: React.FC = () => {
   );
 };
 
-const labelStyle: React.CSSProperties = { fontSize: 12, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 };
+const labelStyle: React.CSSProperties = {
+  fontSize: 12, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 6, fontWeight: 500,
+};
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, boxSizing: 'border-box',
-  background: 'rgba(255,255,255,0.08)', border: '0.5px solid rgba(255,255,255,0.15)',
+  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
   color: '#fff', outline: 'none',
 };
 const primaryBtn: React.CSSProperties = {
