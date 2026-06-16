@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, Eye, Edit3, Send, UserX, UserCheck, Clock, CheckCircle, XCircle } from 'lucide-react';
-import { Logo } from '../components/ui/Logo';
+import { ArrowLeft, Shield, Eye, Edit3, Send, UserX, UserCheck, Clock, CheckCircle, XCircle, X } from 'lucide-react';
+import { Logo } from '../components/ui/Logo.tsx';
 import { usersApi, api } from '../api';
 import { useAuthStore } from '../store';
 import type { User, UserRole } from '../types';
