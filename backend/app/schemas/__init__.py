@@ -267,7 +267,7 @@ class AIJobResponse(OrmBase):
 
 class ExportRequest(BaseModel):
     batch_id: int
-    format: str = Field(pattern="^(coco|yolo|voc|csv)$")
+    format: str = Field(pattern="^(coco|yolo|yolo_seg|voc|csv)$")
     include_ai_suggestions: bool = False
 
 
