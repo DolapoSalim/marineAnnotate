@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, X, SkipForward, ChevronDown, Bot } from 'lucide-react';
+import { Check, X, SkipForward, Bot, CheckCircle } from 'lucide-react';
 import type { Annotation, AIReviewAction, LabelClass } from '../../types';
 import { annotationsApi } from '../../api';
 
@@ -86,8 +86,8 @@ export const AIReviewPanel: React.FC<Props> = ({
           Drag handles on canvas to edit, then accept.
         </div>
         {pendingCount === 0 && (
-          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-success)' }}>
-            ✓ All reviewed
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-success)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <CheckCircle size={13} /> All reviewed
           </div>
         )}
       </div>
@@ -148,7 +148,7 @@ export const AIReviewPanel: React.FC<Props> = ({
                       : rev.action === 'edit' ? '#534AB7'
                       : '#E24B4A',
                   }}>
-                    {rev.action === 'edit' ? '✎ edited' : rev.action === 'accept' ? '✓ accepted' : '✗ rejected'}
+                    {rev.action === 'edit' ? 'edited' : rev.action === 'accept' ? 'accepted' : 'rejected'}
                   </span>
                 </div>
               )}

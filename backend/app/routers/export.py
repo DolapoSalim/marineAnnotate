@@ -1,5 +1,16 @@
 """
-Export annotations in COCO JSON, YOLO TXT, Pascal VOC XML, or CSV format.
+Export annotations for CNN training pipelines.
+
+Format correctness notes:
+- YOLO:      class cx cy w h (normalised 0-1). One .txt per image. data.yaml included.
+             Works with: Ultralytics YOLOv5/v8/v9/v11, Darknet
+- COCO JSON: Pixel-space bbox [x,y,w,h]. Polygon segmentation as flat list.
+             category_id is REMAPPED to 0-based sequential integers (COCO standard).
+             Works with: Detectron2, MMDetection, torchvision, pycocotools
+- Pascal VOC: Pixel-space xmin/ymin/xmax/ymax in XML.
+             Works with: TensorFlow Object Detection API, older Keras pipelines
+- CSV:        Pixel-space bbox + normalised coords. For custom loaders / EDA.
+- Segmentation YOLO: polygon as space-separated normalised x y pairs (YOLOv8 seg format)
 """
 import csv
 import io
@@ -16,14 +27,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import CurrentUserID
-from app.models import Annotation, AnnotationStatus, AnnotationType, Image, ImageBatch, LabelClass, ProjectMember
+from app.models import (
+    Annotation, AnnotationStatus, AnnotationType,
+    Image, ImageBatch, LabelClass, ProjectMember,
+)
 from app.schemas import ExportRequest
 
 router = APIRouter(prefix="/api/export", tags=["export"])
-
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
-# Exclude unreviewed AI suggestions from export by default
 EXPORTABLE_STATUSES = {
     AnnotationStatus.MANUAL,
     AnnotationStatus.AI_ACCEPTED,
@@ -35,7 +47,6 @@ async def _load_batch_data(db: AsyncSession, batch_id: int, user_id: int, includ
     batch = await db.get(ImageBatch, batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
-
     result = await db.execute(
         select(ProjectMember).where(
             ProjectMember.project_id == batch.project_id,
@@ -48,11 +59,13 @@ async def _load_batch_data(db: AsyncSession, batch_id: int, user_id: int, includ
     images_result = await db.execute(select(Image).where(Image.batch_id == batch_id))
     images = list(images_result.scalars().all())
 
-    labels_result = await db.execute(select(LabelClass).where(LabelClass.project_id == batch.project_id))
+    labels_result = await db.execute(
+        select(LabelClass).where(LabelClass.project_id == batch.project_id)
+        .order_by(LabelClass.sort_order, LabelClass.id)
+    )
     labels = {lc.id: lc for lc in labels_result.scalars().all()}
 
     statuses = EXPORTABLE_STATUSES | ({AnnotationStatus.AI_SUGGESTION} if include_ai else set())
-
     annotations: dict[int, list[Annotation]] = {}
     for img in images:
         ann_result = await db.execute(
@@ -67,17 +80,16 @@ async def _load_batch_data(db: AsyncSession, batch_id: int, user_id: int, includ
 
 
 @router.post("/")
-async def export_annotations(
-    payload: ExportRequest, user_id: CurrentUserID, db: DbDep
-) -> StreamingResponse:
+async def export_annotations(payload: ExportRequest, user_id: CurrentUserID, db: DbDep) -> StreamingResponse:
     batch, images, labels, annotations = await _load_batch_data(
         db, payload.batch_id, user_id, payload.include_ai_suggestions
     )
-
-    if payload.format == "coco":
+    if payload.format == "yolo":
+        return _export_yolo(batch, images, labels, annotations)
+    elif payload.format == "yolo_seg":
+        return _export_yolo_seg(batch, images, labels, annotations)
+    elif payload.format == "coco":
         return _export_coco(batch, images, labels, annotations)
-    elif payload.format == "yolo":
-        return _export_yolo(images, labels, annotations)
     elif payload.format == "voc":
         return _export_voc(images, labels, annotations)
     elif payload.format == "csv":
@@ -86,68 +98,32 @@ async def export_annotations(
         raise HTTPException(status_code=400, detail="Unsupported format")
 
 
-def _export_coco(batch, images, labels, annotations) -> StreamingResponse:
-    coco = {
-        "info": {"description": batch.name, "version": "1.0"},
-        "licenses": [],
-        "categories": [
-            {"id": lc.id, "name": lc.name, "supercategory": lc.supercategory or ""}
-            for lc in labels.values()
-        ],
-        "images": [],
-        "annotations": [],
-    }
-    ann_id = 1
-    for img in images:
-        coco["images"].append({
-            "id": img.id, "file_name": img.filename,
-            "width": img.width, "height": img.height,
-        })
-        for ann in annotations.get(img.id, []):
-            g = ann.geometry
-            if ann.annotation_type == AnnotationType.BBOX:
-                x = g["x"] * img.width
-                y = g["y"] * img.height
-                w = g["w"] * img.width
-                h = g["h"] * img.height
-                seg = [[x, y, x + w, y, x + w, y + h, x, y + h]]
-                bbox = [x, y, w, h]
-                area = w * h
-            elif ann.annotation_type == AnnotationType.POLYGON:
-                pts = g.get("points", [])
-                flat = [c for pt in pts for c in [pt[0] * img.width, pt[1] * img.height]]
-                seg = [flat]
-                xs = [p[0] * img.width for p in pts]
-                ys = [p[1] * img.height for p in pts]
-                bbox = [min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)]
-                area = bbox[2] * bbox[3]
-            else:
-                continue
+# ── YOLO Detection (bbox) ─────────────────────────────────────────────────────
 
-            coco["annotations"].append({
-                "id": ann_id, "image_id": img.id,
-                "category_id": ann.label_class_id,
-                "segmentation": seg, "bbox": bbox,
-                "area": area, "iscrowd": 0,
-            })
-            ann_id += 1
-
-    content = json.dumps(coco, indent=2).encode()
-    return StreamingResponse(
-        io.BytesIO(content),
-        media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="annotations_coco.json"'},
-    )
-
-
-def _export_yolo(images, labels, annotations) -> StreamingResponse:
+def _export_yolo(batch, images, labels, annotations) -> StreamingResponse:
+    """
+    Ultralytics YOLO detection format.
+    Structure:
+      labels/<stem>.txt  — one line per bbox: class_idx cx cy w h (normalised 0-1)
+      data.yaml          — dataset config readable by ultralytics train command
+      classes.txt        — human-readable class list
+    """
     buf = io.BytesIO()
+    # Stable 0-based class index, sorted by sort_order then id
+    id_to_idx = {lc_id: i for i, lc_id in enumerate(labels.keys())}
+    class_names = [lc.name for lc in labels.values()]
+
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Write label names
-        names = "\n".join(f"{lc.name}" for lc in labels.values())
-        zf.writestr("classes.txt", names)
-        # Map label_class_id to 0-based index
-        id_to_idx = {lc_id: i for i, lc_id in enumerate(labels.keys())}
+        # data.yaml — plug straight into: yolo train data=data.yaml model=yolov8n.pt
+        yaml_content = (
+            f"path: .  # dataset root\n"
+            f"train: images/train\n"
+            f"val: images/val\n\n"
+            f"nc: {len(class_names)}  # number of classes\n"
+            f"names: {json.dumps(class_names)}\n"
+        )
+        zf.writestr("data.yaml", yaml_content)
+        zf.writestr("classes.txt", "\n".join(class_names))
 
         for img in images:
             lines = []
@@ -155,31 +131,191 @@ def _export_yolo(images, labels, annotations) -> StreamingResponse:
                 if ann.annotation_type != AnnotationType.BBOX:
                     continue
                 g = ann.geometry
-                cx = g["x"] + g["w"] / 2
-                cy = g["y"] + g["h"] / 2
-                cls_idx = id_to_idx.get(ann.label_class_id, 0)
-                lines.append(f"{cls_idx} {cx:.6f} {cy:.6f} {g['w']:.6f} {g['h']:.6f}")
+                # cx, cy, w, h all normalised 0-1
+                cx = g["x"] + g["w"] / 2.0
+                cy = g["y"] + g["h"] / 2.0
+                w = g["w"]
+                h = g["h"]
+                cls = id_to_idx.get(ann.label_class_id, 0)
+                lines.append(f"{cls} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
             stem = Path(img.filename).stem
             zf.writestr(f"labels/{stem}.txt", "\n".join(lines))
 
     buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="annotations_yolo.zip"'},
-    )
+    return StreamingResponse(buf, media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="yolo_detection.zip"'})
 
+
+# ── YOLO Segmentation (polygon) ───────────────────────────────────────────────
+
+def _export_yolo_seg(batch, images, labels, annotations) -> StreamingResponse:
+    """
+    Ultralytics YOLOv8 segmentation format.
+    Each line: class_idx x1 y1 x2 y2 ... xn yn (all normalised 0-1)
+    Bboxes are also included as 4-point polygons for mixed datasets.
+    """
+    buf = io.BytesIO()
+    id_to_idx = {lc_id: i for i, lc_id in enumerate(labels.keys())}
+    class_names = [lc.name for lc in labels.values()]
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        yaml_content = (
+            f"path: .\ntrain: images/train\nval: images/val\n\n"
+            f"nc: {len(class_names)}\nnames: {json.dumps(class_names)}\n"
+        )
+        zf.writestr("data.yaml", yaml_content)
+        zf.writestr("classes.txt", "\n".join(class_names))
+
+        for img in images:
+            lines = []
+            for ann in annotations.get(img.id, []):
+                cls = id_to_idx.get(ann.label_class_id, 0)
+                if ann.annotation_type == AnnotationType.POLYGON:
+                    pts = ann.geometry.get("points", [])
+                    flat = " ".join(f"{p[0]:.6f} {p[1]:.6f}" for p in pts)
+                    lines.append(f"{cls} {flat}")
+                elif ann.annotation_type == AnnotationType.BBOX:
+                    g = ann.geometry
+                    x1, y1 = g["x"], g["y"]
+                    x2, y2 = x1 + g["w"], y1
+                    x3, y3 = x1 + g["w"], y1 + g["h"]
+                    x4, y4 = x1, y1 + g["h"]
+                    lines.append(f"{cls} {x1:.6f} {y1:.6f} {x2:.6f} {y2:.6f} {x3:.6f} {y3:.6f} {x4:.6f} {y4:.6f}")
+            stem = Path(img.filename).stem
+            zf.writestr(f"labels/{stem}.txt", "\n".join(lines))
+
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="yolo_segmentation.zip"'})
+
+
+# ── COCO JSON ────────────────────────────────────────────────────────────────
+
+def _export_coco(batch, images, labels, annotations) -> StreamingResponse:
+    """
+    MS COCO format. Fully compatible with pycocotools, Detectron2, MMDetection.
+    - category_id is remapped to sequential 1-based integers (COCO standard starts at 1)
+    - bbox is [x, y, width, height] in PIXEL space
+    - segmentation is list of [x1,y1,x2,y2,...] in PIXEL space
+    - area is in square pixels
+    """
+    # COCO category IDs must be 1-based sequential integers
+    id_to_coco_cat = {lc_id: i + 1 for i, lc_id in enumerate(labels.keys())}
+
+    coco: dict = {
+        "info": {
+            "description": batch.name,
+            "version": "1.0",
+            "year": 2024,
+            "contributor": "MarineAnnotate",
+            "date_created": "",
+        },
+        "licenses": [],
+        "categories": [
+            {
+                "id": id_to_coco_cat[lc_id],
+                "name": lc.name,
+                "supercategory": lc.supercategory or "marine",
+            }
+            for lc_id, lc in labels.items()
+        ],
+        "images": [],
+        "annotations": [],
+    }
+
+    ann_id = 1
+    for img in images:
+        W = max(img.width, 1)
+        H = max(img.height, 1)
+        coco["images"].append({
+            "id": img.id,
+            "file_name": img.filename,
+            "width": W,
+            "height": H,
+            "license": 0,
+            "flickr_url": "",
+            "coco_url": "",
+            "date_captured": "",
+        })
+
+        for ann in annotations.get(img.id, []):
+            cat_id = id_to_coco_cat.get(ann.label_class_id)
+            if cat_id is None:
+                continue
+
+            if ann.annotation_type == AnnotationType.BBOX:
+                g = ann.geometry
+                x_px = g["x"] * W
+                y_px = g["y"] * H
+                w_px = g["w"] * W
+                h_px = g["h"] * H
+                bbox = [round(x_px, 2), round(y_px, 2), round(w_px, 2), round(h_px, 2)]
+                area = round(w_px * h_px, 2)
+                # COCO segmentation from bbox (closed polygon)
+                seg = [[x_px, y_px, x_px + w_px, y_px,
+                        x_px + w_px, y_px + h_px, x_px, y_px + h_px]]
+
+            elif ann.annotation_type == AnnotationType.POLYGON:
+                pts = ann.geometry.get("points", [])
+                if len(pts) < 3:
+                    continue
+                flat = [c for pt in pts for c in [round(pt[0] * W, 2), round(pt[1] * H, 2)]]
+                seg = [flat]
+                xs = [pt[0] * W for pt in pts]
+                ys = [pt[1] * H for pt in pts]
+                bx, by = min(xs), min(ys)
+                bw, bh = max(xs) - bx, max(ys) - by
+                bbox = [round(bx, 2), round(by, 2), round(bw, 2), round(bh, 2)]
+                area = round(bw * bh, 2)
+
+            else:
+                continue
+
+            coco["annotations"].append({
+                "id": ann_id,
+                "image_id": img.id,
+                "category_id": cat_id,
+                "segmentation": seg,
+                "bbox": bbox,
+                "area": area,
+                "iscrowd": 0,
+            })
+            ann_id += 1
+
+    content = json.dumps(coco, indent=2).encode()
+    return StreamingResponse(io.BytesIO(content), media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="annotations_coco.json"'})
+
+
+# ── Pascal VOC ────────────────────────────────────────────────────────────────
 
 def _export_voc(images, labels, annotations) -> StreamingResponse:
+    """
+    Pascal VOC 2012 XML format.
+    - xmin/ymin/xmax/ymax in PIXEL space (integer)
+    - Compatible with TF Object Detection API and most Keras pipelines
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        label_map_lines = ["item {", "  id: 0", "  name: '__background__'", "}"]
+        for i, (lc_id, lc) in enumerate(labels.items(), start=1):
+            label_map_lines += [f"item {{", f"  id: {i}", f"  name: '{lc.name}'", "}"]
+        zf.writestr("label_map.pbtxt", "\n".join(label_map_lines))
+
         for img in images:
+            W = max(img.width, 1)
+            H = max(img.height, 1)
             root = Element("annotation")
+            SubElement(root, "folder").text = "images"
             SubElement(root, "filename").text = img.filename
+            SubElement(root, "path").text = img.filename
+            source = SubElement(root, "source")
+            SubElement(source, "database").text = "MarineAnnotate"
             size = SubElement(root, "size")
-            SubElement(size, "width").text = str(img.width)
-            SubElement(size, "height").text = str(img.height)
+            SubElement(size, "width").text = str(W)
+            SubElement(size, "height").text = str(H)
             SubElement(size, "depth").text = "3"
+            SubElement(root, "segmented").text = "0"
 
             for ann in annotations.get(img.id, []):
                 if ann.annotation_type != AnnotationType.BBOX:
@@ -188,47 +324,74 @@ def _export_voc(images, labels, annotations) -> StreamingResponse:
                 lc = labels.get(ann.label_class_id)
                 obj = SubElement(root, "object")
                 SubElement(obj, "name").text = lc.name if lc else "unknown"
+                SubElement(obj, "pose").text = "Unspecified"
+                SubElement(obj, "truncated").text = "0"
                 SubElement(obj, "difficult").text = "0"
                 bndbox = SubElement(obj, "bndbox")
-                SubElement(bndbox, "xmin").text = str(int(g["x"] * img.width))
-                SubElement(bndbox, "ymin").text = str(int(g["y"] * img.height))
-                SubElement(bndbox, "xmax").text = str(int((g["x"] + g["w"]) * img.width))
-                SubElement(bndbox, "ymax").text = str(int((g["y"] + g["h"]) * img.height))
+                SubElement(bndbox, "xmin").text = str(max(0, int(g["x"] * W)))
+                SubElement(bndbox, "ymin").text = str(max(0, int(g["y"] * H)))
+                SubElement(bndbox, "xmax").text = str(min(W, int((g["x"] + g["w"]) * W)))
+                SubElement(bndbox, "ymax").text = str(min(H, int((g["y"] + g["h"]) * H)))
 
             stem = Path(img.filename).stem
-            zf.writestr(f"{stem}.xml", tostring(root, encoding="unicode"))
+            zf.writestr(f"annotations/{stem}.xml", tostring(root, encoding="unicode"))
 
     buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="annotations_voc.zip"'},
-    )
+    return StreamingResponse(buf, media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="voc_annotations.zip"'})
 
+
+# ── CSV ───────────────────────────────────────────────────────────────────────
 
 def _export_csv(images, labels, annotations) -> StreamingResponse:
+    """
+    Flat CSV with both normalised and pixel-space coordinates.
+    Useful for custom PyTorch/Keras Dataset classes and EDA.
+    """
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "image_id", "filename", "label", "supercategory",
-        "type", "x_norm", "y_norm", "w_norm", "h_norm",
+        "image_id", "filename", "img_width", "img_height",
+        "label", "supercategory", "annotation_type",
+        "x_norm", "y_norm", "w_norm", "h_norm",
+        "x_px", "y_px", "w_px", "h_px",
+        "polygon_points_norm",
         "confidence", "status",
     ])
     for img in images:
+        W = max(img.width, 1)
+        H = max(img.height, 1)
         for ann in annotations.get(img.id, []):
             lc = labels.get(ann.label_class_id)
             g = ann.geometry
+            x_n = y_n = w_n = h_n = ""
+            x_px = y_px = w_px = h_px = ""
+            poly = ""
+            if ann.annotation_type == AnnotationType.BBOX:
+                x_n, y_n, w_n, h_n = g["x"], g["y"], g["w"], g["h"]
+                x_px = round(g["x"] * W, 2)
+                y_px = round(g["y"] * H, 2)
+                w_px = round(g["w"] * W, 2)
+                h_px = round(g["h"] * H, 2)
+            elif ann.annotation_type == AnnotationType.POLYGON:
+                pts = g.get("points", [])
+                poly = json.dumps(pts)
+                if pts:
+                    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+                    x_n, y_n = min(xs), min(ys)
+                    w_n, h_n = max(xs) - x_n, max(ys) - y_n
+                    x_px = round(x_n * W, 2); y_px = round(y_n * H, 2)
+                    w_px = round(w_n * W, 2); h_px = round(h_n * H, 2)
             writer.writerow([
-                img.id, img.filename,
+                img.id, img.filename, W, H,
                 lc.name if lc else "", lc.supercategory if lc else "",
                 ann.annotation_type.value,
-                g.get("x", ""), g.get("y", ""), g.get("w", ""), g.get("h", ""),
+                x_n, y_n, w_n, h_n,
+                x_px, y_px, w_px, h_px,
+                poly,
                 ann.confidence or "", ann.status.value,
             ])
 
-    content = buf.getvalue().encode()
-    return StreamingResponse(
-        io.BytesIO(content),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="annotations.csv"'},
-    )
+    content = buf.getvalue().encode("utf-8-sig")  # UTF-8 BOM for Excel compatibility
+    return StreamingResponse(io.BytesIO(content), media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="annotations.csv"'})
