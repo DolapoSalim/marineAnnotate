@@ -81,6 +81,8 @@ export const imagesApi = {
   assign: (batchId: number, imageId: number, userId: number | null) =>
     api.patch(`/api/batches/${batchId}/images/${imageId}/assign`, { user_id: userId }),
   complete: (imageId: number) => api.post(`/api/images/${imageId}/complete`),
+  delete: (batchId: number, imageId: number) =>
+    api.delete(`/api/batches/${batchId}/images/${imageId}`),
 };
 
 // ── Annotations ───────────────────────────────────────────────────────────────
