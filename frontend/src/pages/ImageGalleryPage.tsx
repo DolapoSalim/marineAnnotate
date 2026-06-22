@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, CheckCircle, Clock, Eye, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, Clock, Eye, AlertCircle, Trash2, AlertTriangle } from 'lucide-react';
 import { ImageThumbnail } from '../components/ImageThumbnail';
+import { Logo } from '../components/ui/Logo';
 import { imagesApi, projectsApi } from '../api';
 import type { AnnotationImage, ImageBatch } from '../types';
 
@@ -26,6 +27,8 @@ export const ImageGalleryPage: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AnnotationImage | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -49,6 +52,19 @@ export const ImageGalleryPage: React.FC = () => {
     const res = await imagesApi.list(bid, 0, 200);
     setImages(res.data);
     setUploading(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await imagesApi.delete(bid, deleteTarget.id);
+      setImages(prev => prev.filter(img => img.id !== deleteTarget.id));
+      setSelected(null);
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const filteredImages = filter === 'all'
@@ -77,6 +93,8 @@ export const ImageGalleryPage: React.FC = () => {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button onClick={() => navigate(`/projects/${pid}`)} style={iconBtn}><ArrowLeft size={15} /></button>
+        <Logo size={22} showName={false} />
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)' }} />
         <div>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{batch?.name || 'Image Gallery'}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{stats.total} images</div>
@@ -233,6 +251,17 @@ export const ImageGalleryPage: React.FC = () => {
                       >
                         Annotate
                       </button>
+                      <button
+                        onClick={e => { e.stopPropagation(); setDeleteTarget(img); }}
+                        title="Delete image"
+                        style={{
+                          width: 28, flexShrink: 0, borderRadius: 6, border: '0.5px solid rgba(226,75,74,0.4)',
+                          background: 'rgba(226,75,74,0.15)', color: '#E24B4A', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -241,6 +270,48 @@ export const ImageGalleryPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: '#1a2535', border: '0.5px solid rgba(255,255,255,0.1)',
+            borderRadius: 14, padding: 24, width: 360,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <AlertTriangle size={18} style={{ color: '#E24B4A' }} />
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Delete image?</span>
+            </div>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 20 }}>
+              This will permanently delete <strong style={{ color: '#e8edf2' }}>{deleteTarget.filename}</strong> and all
+              {' '}{deleteTarget.annotation_count} annotation{deleteTarget.annotation_count === 1 ? '' : 's'} on it. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                style={{ flex: 1, padding: '9px', borderRadius: 8, border: '0.5px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                style={{
+                  flex: 1, padding: '9px', borderRadius: 8, border: 'none',
+                  background: '#E24B4A', color: '#fff', fontSize: 13, fontWeight: 500,
+                  cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1,
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Delete permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
