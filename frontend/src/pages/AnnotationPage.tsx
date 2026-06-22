@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Square, Pentagon, MapPin, Hand,
-  ZoomIn, ZoomOut, Maximize2, ChevronLeft, ChevronRight, Bot, Download,
+  ArrowLeft, Square, PenTool, Crosshair, MousePointer2, Move,
+  ZoomIn, ZoomOut, Scan, ChevronLeft, ChevronRight, Bot, Download, Trash2,
 } from 'lucide-react';
 import { imagesApi, annotationsApi, projectsApi } from '../api';
 import { useCanvasStore, useProjectStore, useAuthStore } from '../store';
 import { useProjectWebSocket } from '../hooks/useWebSocket';
 import { AnnotationCanvas } from '../components/canvas/AnnotationCanvas';
 import { ExportModal } from '../components/ExportModal';
+import { Logo } from '../components/ui/Logo';
 import { AIReviewPanel } from '../components/sidebar/AIReviewPanel';
 import type { Annotation, AnnotationImage, LabelClass, WSEvent } from '../types';
 
@@ -24,6 +25,8 @@ export const AnnotationPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showDeleteImage, setShowDeleteImage] = useState(false);
+  const [deletingImage, setDeletingImage] = useState(false);
 
   const { labels, setLabels, activeLabelId, setActiveLabel } = useProjectStore();
   const { tool, setTool, setZoom, zoom, resetCanvas, selectedAnnotationId } = useCanvasStore();
@@ -108,6 +111,24 @@ export const AnnotationPage: React.FC = () => {
     if (imageIndex < images.length - 1) setImageIndex((i) => i + 1);
   };
 
+  const handleDeleteImage = async () => {
+    if (!currentImage) return;
+    setDeletingImage(true);
+    try {
+      await imagesApi.delete(bid, currentImage.id);
+      const remaining = images.filter((_, i) => i !== imageIndex);
+      setImages(remaining);
+      setShowDeleteImage(false);
+      if (remaining.length === 0) {
+        navigate(`/projects/${pid}/batches/${bid}/gallery`);
+      } else if (imageIndex >= remaining.length) {
+        setImageIndex(remaining.length - 1);
+      }
+    } finally {
+      setDeletingImage(false);
+    }
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -130,11 +151,11 @@ export const AnnotationPage: React.FC = () => {
   }, [imageIndex, images.length, selectedAnnotationId, zoom]);
 
   const toolButtons = [
-    { key: 'select', icon: <Hand size={16} />, label: 'Select (V)' },
+    { key: 'select', icon: <MousePointer2 size={16} />, label: 'Select (V)' },
     { key: 'bbox', icon: <Square size={16} />, label: 'Bounding box (B)' },
-    { key: 'polygon', icon: <Pentagon size={16} />, label: 'Polygon (P) · dbl-click to close' },
-    { key: 'keypoint', icon: <MapPin size={16} />, label: 'Keypoint (K)' },
-    { key: 'pan', icon: <Maximize2 size={16} />, label: 'Pan (H)' },
+    { key: 'polygon', icon: <PenTool size={16} />, label: 'Polygon (P) · click first point or dbl-click to close' },
+    { key: 'keypoint', icon: <Crosshair size={16} />, label: 'Keypoint (K)' },
+    { key: 'pan', icon: <Move size={16} />, label: 'Pan (H) · or hold Spacebar with any tool' },
   ] as const;
 
   const hasAISuggestions = annotations.some((a) => a.status === 'ai_suggestion');
@@ -147,7 +168,9 @@ export const AnnotationPage: React.FC = () => {
         borderBottom: '0.5px solid rgba(255,255,255,0.08)', gap: 12, flexShrink: 0,
         background: 'rgba(255,255,255,0.02)',
       }}>
-        <button onClick={() => navigate(`/projects/${pid}`)} style={iconBtn}><ArrowLeft size={15} /></button>
+        <button onClick={() => navigate(`/projects/${pid}/batches/${bid}/gallery`)} style={iconBtn}><ArrowLeft size={15} /></button>
+        <Logo size={20} showName={false} />
+        <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.1)' }} />
         <span style={{ fontSize: 13, fontWeight: 500 }}>
           {currentImage?.filename || '…'}
         </span>
@@ -161,6 +184,11 @@ export const AnnotationPage: React.FC = () => {
         </button>
         <button onClick={() => setImageIndex((i) => Math.min(images.length - 1, i + 1))} style={iconBtn} disabled={imageIndex === images.length - 1}>
           <ChevronRight size={15} />
+        </button>
+
+        {/* Delete image */}
+        <button onClick={() => setShowDeleteImage(true)} style={{ ...iconBtn, color: '#E24B4A', borderColor: 'rgba(226,75,74,0.3)' }} title="Delete this image">
+          <Trash2 size={14} />
         </button>
 
         <div style={{ flex: 1 }} />
@@ -219,7 +247,7 @@ export const AnnotationPage: React.FC = () => {
           <div style={{ flex: 1 }} />
           <button onClick={() => setZoom(zoom * 1.2)} style={iconToolBtn} title="Zoom in (+)"><ZoomIn size={15} /></button>
           <button onClick={() => setZoom(zoom * 0.8)} style={iconToolBtn} title="Zoom out (-)"><ZoomOut size={15} /></button>
-          <button onClick={resetCanvas} style={iconToolBtn} title="Fit to screen"><Maximize2 size={15} /></button>
+          <button onClick={resetCanvas} style={iconToolBtn} title="Fit to screen"><Scan size={15} /></button>
         </div>
 
         {/* Canvas */}
@@ -333,7 +361,7 @@ export const AnnotationPage: React.FC = () => {
           {annotations.filter((a) => a.status !== 'ai_rejected').length}
         </b></span>
         <span style={{ marginLeft: 'auto' }}>
-          B=bbox · P=polygon · K=keypoint · V=select · ←→=navigate · Del=delete
+          B=bbox · P=polygon · K=keypoint · V=select · Space+drag=pan · scroll=zoom · ←→=navigate · Del=delete
         </span>
       </div>
       {/* Export modal */}
@@ -343,6 +371,40 @@ export const AnnotationPage: React.FC = () => {
           batchName={`Batch ${bid}`}
           onClose={() => setShowExport(false)}
         />
+      )}
+
+      {/* Delete image confirmation */}
+      {showDeleteImage && currentImage && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: '#1a2535', border: '0.5px solid rgba(255,255,255,0.1)',
+            borderRadius: 14, padding: 24, width: 360,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <Trash2 size={18} style={{ color: '#E24B4A' }} />
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Delete this image?</span>
+            </div>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 20 }}>
+              <strong style={{ color: '#e8edf2' }}>{currentImage.filename}</strong> and all its annotations will be permanently deleted. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setShowDeleteImage(false)} style={{ flex: 1, padding: '9px', borderRadius: 8, border: '0.5px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={handleDeleteImage} disabled={deletingImage} style={{
+                flex: 1, padding: '9px', borderRadius: 8, border: 'none',
+                background: '#E24B4A', color: '#fff', fontSize: 13, fontWeight: 500,
+                cursor: deletingImage ? 'not-allowed' : 'pointer', opacity: deletingImage ? 0.6 : 1,
+              }}>
+                {deletingImage ? 'Deleting…' : 'Delete permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

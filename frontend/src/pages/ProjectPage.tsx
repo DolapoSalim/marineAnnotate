@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, Plus, Bot, Download, Users } from 'lucide-react';
+import { Logo } from '../components/ui/Logo';
 import { ExportModal } from '../components/ExportModal';
 import { projectsApi, imagesApi, exportApi } from '../api';
 import { useProjectStore } from '../store';
@@ -101,7 +102,9 @@ export const ProjectPage: React.FC = () => {
         borderBottom: '0.5px solid rgba(255,255,255,0.08)',
         background: 'rgba(255,255,255,0.02)', gap: 12,
       }}>
-        <button onClick={() => navigate('/')} style={iconBtn}><ArrowLeft size={16} /></button>
+        <button onClick={() => navigate('/dashboard')} style={iconBtn}><ArrowLeft size={16} /></button>
+        <Logo size={22} showName={false} />
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)' }} />
         <span style={{ fontWeight: 600, fontSize: 15 }}>{project?.name || '…'}</span>
         <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
           {project?.description}
