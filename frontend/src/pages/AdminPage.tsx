@@ -82,7 +82,7 @@ export const AdminPage: React.FC = () => {
             color: inviteStatus.type === 'success' ? '#1D9E75' : '#E24B4A',
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
-            {inviteStatus.type === 'success' ? <CheckCircle size={14} /> : <XCircle size={14} />} {inviteStatus.msg}
+            {inviteStatus.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />} {inviteStatus.msg}
             <button onClick={() => setInviteStatus(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, display: 'flex' }}><X size={14} /></button>
           </div>
         )}
