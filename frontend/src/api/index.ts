@@ -103,8 +103,11 @@ export const annotationsApi = {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 export const exportApi = {
-  export: (batchId: number, format: string, includeAi = false) =>
-    api.post('/api/export/', { batch_id: batchId, format, include_ai_suggestions: includeAi }, {
-      responseType: 'blob',
-    }),
+  export: (batchId: number, format: string, includeAi = false, includeImages = true, valSplit = 0.2) =>
+    api.post('/api/export/', {
+      batch_id: batchId, format,
+      include_ai_suggestions: includeAi,
+      include_images: includeImages,
+      val_split: valSplit,
+    }, { responseType: 'blob' }),
 };
