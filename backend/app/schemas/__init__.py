@@ -269,6 +269,8 @@ class ExportRequest(BaseModel):
     batch_id: int
     format: str = Field(pattern="^(coco|yolo|yolo_seg|voc|csv)$")
     include_ai_suggestions: bool = False
+    include_images: bool = True
+    val_split: float = Field(default=0.2, ge=0.0, le=0.5)
 
 
 # ── WebSocket events (broadcasted) ────────────────────────────────────────────
