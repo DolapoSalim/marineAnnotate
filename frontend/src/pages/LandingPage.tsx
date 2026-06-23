@@ -1,14 +1,15 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store';
+import { Logo } from '../components/ui/Logo';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { token } = useAuthStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Redirect logged-in users to dashboard
-  useEffect(() => { if (token) navigate('/dashboard'); }, [token]);
+  // No auto-redirect here — the landing page always shows on "/".
+  // Logged-in users can click "Go to dashboard" below, or "Sign in" otherwise.
 
   // Animated particle ocean background
   useEffect(() => {
@@ -96,10 +97,9 @@ export const LandingPage: React.FC = () => {
         position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center',
         padding: '20px 48px', borderBottom: '0.5px solid rgba(255,255,255,0.06)',
       }}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" strokeWidth="2" strokeLinecap="round"><path d="M4 12 C4 6 8 3 14 3 C20 3 22 7 22 12 C22 17 20 21 14 21 C8 21 4 18 4 12Z"/><circle cx="9" cy="10" r="1.5" fill="#1D9E75" stroke="none"/><path d="M16 12 C18 10 21 11 22 12 C21 13 18 14 16 12Z" fill="#1D9E75" stroke="none"/></svg>
-        <span style={{ marginLeft: 10, fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>MarineAnnotate</span>
+<Logo size={30} />
         <div style={{ flex: 1 }} />
-        <button onClick={() => navigate('/login')} style={{
+        <button onClick={() => navigate(token ? '/dashboard' : '/login')} style={{
           padding: '9px 24px', borderRadius: 8, border: '0.5px solid rgba(255,255,255,0.2)',
           background: 'transparent', color: '#e8edf2', fontSize: 14, cursor: 'pointer',
           fontFamily: "'DM Sans', sans-serif", fontWeight: 500,
@@ -108,7 +108,7 @@ export const LandingPage: React.FC = () => {
           onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
-          Sign in
+          {token ? 'Go to dashboard' : 'Sign in'}
         </button>
       </nav>
 
@@ -139,7 +139,7 @@ export const LandingPage: React.FC = () => {
         </p>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button onClick={() => navigate('/login')} style={{
+          <button onClick={() => navigate(token ? '/dashboard' : '/login')} style={{
             padding: '14px 36px', borderRadius: 10, border: 'none', cursor: 'pointer',
             background: 'linear-gradient(135deg, #1D9E75, #0d6b52)',
             color: '#fff', fontSize: 16, fontWeight: 600,
@@ -150,7 +150,7 @@ export const LandingPage: React.FC = () => {
             onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 50px rgba(29,158,117,0.5)'; }}
             onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 0 40px rgba(29,158,117,0.35)'; }}
           >
-            Enter the platform →
+            {token ? 'Go to dashboard →' : 'Enter the platform →'}
           </button>
         </div>
       </div>

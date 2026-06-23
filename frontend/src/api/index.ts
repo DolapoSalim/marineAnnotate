@@ -14,13 +14,17 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Redirect to login on 401
+// Redirect to login on 401 — also clear the persisted Zustand auth store
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('access_token');
-      window.location.href = '/login';
+      localStorage.removeItem('marine-auth'); // Zustand persist key
+      delete api.defaults.headers.common['Authorization'];
+      if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(err);
   }
