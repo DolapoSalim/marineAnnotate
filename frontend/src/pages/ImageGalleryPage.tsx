@@ -54,14 +54,21 @@ export const ImageGalleryPage: React.FC = () => {
     setUploading(false);
   };
 
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       await imagesApi.delete(bid, deleteTarget.id);
       setImages(prev => prev.filter(img => img.id !== deleteTarget.id));
       setSelected(null);
       setDeleteTarget(null);
+    } catch (err: any) {
+      console.error('Delete failed:', err);
+      const msg = err.response?.data?.detail || err.message || 'Failed to delete image';
+      setDeleteError(msg);
     } finally {
       setDeleting(false);
     }
@@ -290,9 +297,17 @@ export const ImageGalleryPage: React.FC = () => {
               This will permanently delete <strong style={{ color: '#e8edf2' }}>{deleteTarget.filename}</strong> and all
               {' '}{deleteTarget.annotation_count} annotation{deleteTarget.annotation_count === 1 ? '' : 's'} on it. This cannot be undone.
             </p>
+            {deleteError && (
+              <div style={{
+                padding: '10px 12px', borderRadius: 8, marginBottom: 16, fontSize: 12.5,
+                background: 'rgba(226,75,74,0.12)', border: '0.5px solid rgba(226,75,74,0.35)', color: '#f87171',
+              }}>
+                {deleteError}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={() => setDeleteTarget(null)}
+                onClick={() => { setDeleteTarget(null); setDeleteError(null); }}
                 style={{ flex: 1, padding: '9px', borderRadius: 8, border: '0.5px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 13, cursor: 'pointer' }}
               >
                 Cancel
