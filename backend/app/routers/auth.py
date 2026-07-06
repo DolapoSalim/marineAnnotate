@@ -1,9 +1,3 @@
-"""
-Auth router — patched for:
-- Fix 3: brute-force rate limiting via slowapi
-- Fix 6: short access tokens + refresh token flow (HttpOnly cookie)
-- Fix 5: WS token sent in first message (handled in websocket.py)
-"""
 from datetime import timezone, datetime
 from typing import Annotated
 
@@ -25,7 +19,6 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 async def _check_rate_limit(request: Request, email: str) -> None:
-    """Simple Redis-based rate limit: max 10 login attempts per IP per 15 min."""
     try:
         from app.core.redis import redis_client
         ip = request.client.host if request.client else "unknown"
@@ -41,7 +34,7 @@ async def _check_rate_limit(request: Request, email: str) -> None:
     except HTTPException:
         raise
     except Exception:
-        pass  # Redis unavailable — allow through
+        pass
 
 
 async def _track_failed_attempt(email: str) -> None:
@@ -70,6 +63,12 @@ async def _clear_failed_attempts(email: str) -> None:
         await redis_client.delete(f"login_fail:{email}", f"login_lock:{email}")
     except Exception:
         pass
+
+
+def _is_secure(request: Request) -> bool:
+    """Detect real scheme even behind nginx (via X-Forwarded-Proto)."""
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    return forwarded == "https" or request.url.scheme == "https"
 
 
 @router.post("/token", response_model=Token)
@@ -107,11 +106,12 @@ async def login(
 
     access_token = create_access_token(str(user.id))
     refresh_token = create_refresh_token(str(user.id))
+
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=not settings.DEBUG,
+        secure=_is_secure(request),
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         path="/api/auth/refresh",
@@ -122,6 +122,7 @@ async def login(
 
 @router.post("/refresh", response_model=Token)
 async def refresh_access_token(
+    request: Request,
     response: Response,
     db: DbDep,
     refresh_token: str | None = Cookie(default=None),
@@ -147,11 +148,12 @@ async def refresh_access_token(
 
     new_access = create_access_token(str(user_id))
     new_refresh = create_refresh_token(str(user_id))
+
     response.set_cookie(
         key="refresh_token",
         value=new_refresh,
         httponly=True,
-        secure=not settings.DEBUG,
+        secure=_is_secure(request),
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         path="/api/auth/refresh",
