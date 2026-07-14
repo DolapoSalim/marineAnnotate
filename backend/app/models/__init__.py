@@ -38,11 +38,11 @@ class AnnotationType(str, enum.Enum):
 
 
 class AnnotationStatus(str, enum.Enum):
-    MANUAL = "manual"          # drawn by human
-    AI_SUGGESTION = "ai_suggestion"  # AI predicted, not yet reviewed
-    AI_ACCEPTED = "ai_accepted"      # confirmed as-is
-    AI_EDITED = "ai_edited"          # corrected then accepted
-    AI_REJECTED = "ai_rejected"      # discarded
+    MANUAL = "manual"
+    AI_SUGGESTION = "ai_suggestion"
+    AI_ACCEPTED = "ai_accepted"
+    AI_EDITED = "ai_edited"
+    AI_REJECTED = "ai_rejected"
 
 
 class ImageStatus(str, enum.Enum):
@@ -82,7 +82,13 @@ class User(Base):
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     memberships: Mapped[list[ProjectMember]] = relationship(back_populates="user")
-    annotations: Mapped[list[Annotation]] = relationship(back_populates="created_by_user", foreign_keys="[Annotation.created_by]")
+    # IMPORTANT: Annotation has TWO foreign keys to users (created_by, reviewed_by).
+    # foreign_keys must be specified explicitly or SQLAlchemy cannot determine
+    # which column this relationship should join on (AmbiguousForeignKeysError).
+    annotations: Mapped[list[Annotation]] = relationship(
+        back_populates="created_by_user",
+        foreign_keys="[Annotation.created_by]",
+    )
 
 
 class Project(Base):
@@ -173,14 +179,9 @@ class Annotation(Base):
     annotation_type: Mapped[AnnotationType] = mapped_column(Enum(AnnotationType), nullable=False)
     status: Mapped[AnnotationStatus] = mapped_column(Enum(AnnotationStatus), default=AnnotationStatus.MANUAL)
 
-    # Geometry — stored as JSON for flexibility across all types
-    # bbox: {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}  (normalised 0-1)
-    # polygon: {"points": [[x1,y1],[x2,y2],...]}         (normalised 0-1)
-    # keypoints: {"points": [{"x":0.1,"y":0.2,"v":2}]}  (v=visibility)
-    # classification: {}
     geometry: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
-    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)  # AI confidence score
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -189,12 +190,14 @@ class Annotation(Base):
 
     image: Mapped[Image] = relationship(back_populates="annotations")
     label_class: Mapped[LabelClass] = relationship(back_populates="annotations")
-    created_by_user: Mapped[User] = relationship(foreign_keys=[created_by], back_populates="annotations")
+    created_by_user: Mapped[User] = relationship(
+        foreign_keys=[created_by],
+        back_populates="annotations",
+    )
     history: Mapped[list[AnnotationHistory]] = relationship(back_populates="annotation", cascade="all, delete-orphan")
 
 
 class AnnotationHistory(Base):
-    """Full history of every annotation change for rollback."""
     __tablename__ = "annotation_history"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
