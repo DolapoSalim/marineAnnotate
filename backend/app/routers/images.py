@@ -1,13 +1,3 @@
-"""
-Images router — patched for:
-- Fix 2: path traversal via safe upload utilities
-- Fix 8: chunked streaming instead of read() all at once
-"""
-"""
-Images router.
-Image serving uses a short-lived signed token in the URL so browser <img> tags
-can load images without needing an Authorization header.
-"""
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -27,7 +17,6 @@ from app.core.uploads import (
 )
 from app.crud import get_image, list_images
 from app.models import Annotation, Image, ImageBatch, ImageStatus, ProjectMember
-from app.schemas import ImageAssign, ImageResponse
 
 router = APIRouter(prefix="/api/batches", tags=["images"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -52,11 +41,11 @@ async def _check_batch_access(batch_id: int, user_id: int, db: AsyncSession) -> 
     return batch
 
 
-@router.get("/{batch_id}/images", response_model=list[ImageResponse])
+@router.get("/{batch_id}/images")
 async def list_batch_images(
     batch_id: int, user_id: CurrentUserID, db: DbDep,
     skip: int = 0, limit: int = 200,
-) -> list[ImageResponse]:
+):
     await _check_batch_access(batch_id, user_id, db)
     images = await list_images(db, batch_id, skip=skip, limit=limit)
     result = []
@@ -64,11 +53,15 @@ async def list_batch_images(
         count = await db.scalar(
             select(func.count()).where(Annotation.image_id == img.id)
         ) or 0
-        r = ImageResponse.model_validate(img)
-        r.annotation_count = count
-        r.image_url = f"/api/images/{img.id}/file"
-        r.thumbnail_url = f"/api/images/{img.id}/thumbnail"
-        result.append(r)
+        result.append({
+            "id": img.id, "batch_id": img.batch_id, "filename": img.filename,
+            "width": img.width, "height": img.height, "file_size": img.file_size,
+            "status": img.status.value, "assigned_to": img.assigned_to,
+            "uploaded_at": img.uploaded_at.isoformat(),
+            "annotation_count": count,
+            "thumbnail_url": f"/api/images/{img.id}/thumbnail",
+            "image_url": f"/api/images/{img.id}/file",
+        })
     return result
 
 
@@ -122,9 +115,7 @@ async def upload_images(
             filename=upload.filename or f"{file_id}{ext}",
             storage_path=str(filepath),
             thumbnail_path=str(thumbpath),
-            width=width,
-            height=height,
-            file_size=file_size,
+            width=width, height=height, file_size=file_size,
             status=ImageStatus.PENDING,
         )
         db.add(img)
@@ -134,35 +125,55 @@ async def upload_images(
     return {"uploaded": len(created)}
 
 
-@router.get("/{batch_id}/images/{image_id}", response_model=ImageResponse)
-async def get_image_detail(
-    batch_id: int, image_id: int, user_id: CurrentUserID, db: DbDep,
-) -> ImageResponse:
+@router.get("/{batch_id}/images/{image_id}")
+async def get_image_detail(batch_id: int, image_id: int, user_id: CurrentUserID, db: DbDep):
     await _check_batch_access(batch_id, user_id, db)
     img = await get_image(db, image_id)
     if not img or img.batch_id != batch_id:
         raise HTTPException(status_code=404, detail="Image not found")
-    r = ImageResponse.model_validate(img)
-    r.image_url = f"/api/images/{img.id}/file"
-    r.thumbnail_url = f"/api/images/{img.id}/thumbnail"
-    return r
+    return {
+        "id": img.id, "batch_id": img.batch_id, "filename": img.filename,
+        "width": img.width, "height": img.height, "file_size": img.file_size,
+        "status": img.status.value, "assigned_to": img.assigned_to,
+        "uploaded_at": img.uploaded_at.isoformat(),
+        "image_url": f"/api/images/{img.id}/file",
+        "thumbnail_url": f"/api/images/{img.id}/thumbnail",
+    }
 
 
 @router.patch("/{batch_id}/images/{image_id}/assign")
-async def assign_image(
-    batch_id: int, image_id: int, payload: ImageAssign,
-    user_id: CurrentUserID, db: DbDep,
-) -> dict:
+async def assign_image(batch_id: int, image_id: int, payload: dict, user_id: CurrentUserID, db: DbDep) -> dict:
     await _check_batch_access(batch_id, user_id, db)
     img = await get_image(db, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
-    img.assigned_to = payload.user_id
+    img.assigned_to = payload.get("user_id")
     await db.commit()
-    return {"assigned_to": payload.user_id}
+    return {"assigned_to": img.assigned_to}
 
 
-# ── File serving — JWT auth via Authorization header ─────────────────────────
+# ── DELETE — this is the route that was missing/reverted ──────────────────────
+@router.delete("/{batch_id}/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_image(batch_id: int, image_id: int, user_id: CurrentUserID, db: DbDep) -> None:
+    """Delete an image, its thumbnail, and all its annotations (cascade)."""
+    await _check_batch_access(batch_id, user_id, db)
+    img = await get_image(db, image_id)
+    if not img or img.batch_id != batch_id:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Remove files from disk (best-effort — DB record is the source of truth)
+    try:
+        Path(img.storage_path).unlink(missing_ok=True)
+        if img.thumbnail_path:
+            Path(img.thumbnail_path).unlink(missing_ok=True)
+    except Exception as e:
+        print(f"File cleanup warning: {e}")
+
+    await db.delete(img)  # cascades to annotations via ORM relationship
+    await db.commit()
+
+
+# ── File serving ──────────────────────────────────────────────────────────────
 images_router = APIRouter(prefix="/api/images", tags=["image-files"])
 
 
@@ -196,3 +207,13 @@ async def serve_thumbnail(image_id: int, user_id: CurrentUserID, db: DbDep) -> F
         raise HTTPException(status_code=404, detail="Image not found")
     p = _safe_path(img, Path(settings.IMAGES_PATH), thumb=True)
     return FileResponse(str(p), headers={"Cache-Control": "private, max-age=3600"})
+
+
+@images_router.post("/{image_id}/complete")
+async def mark_image_complete(image_id: int, user_id: CurrentUserID, db: DbDep) -> dict:
+    img = await get_image(db, image_id)
+    if not img:
+        raise HTTPException(status_code=404, detail="Image not found")
+    img.status = ImageStatus.ANNOTATED
+    await db.commit()
+    return {"status": "annotated"}
