@@ -163,7 +163,6 @@ class ImageAssign(BaseModel):
 # ── Annotations ───────────────────────────────────────────────────────────────
 
 class BBoxGeometry(BaseModel):
-    """Normalised 0-1 coordinates."""
     x: float = Field(ge=0.0, le=1.0)
     y: float = Field(ge=0.0, le=1.0)
     w: float = Field(ge=0.0, le=1.0)
@@ -171,7 +170,7 @@ class BBoxGeometry(BaseModel):
 
 
 class PolygonGeometry(BaseModel):
-    points: list[list[float]]  # [[x1,y1],[x2,y2],...]
+    points: list[list[float]]
 
     @field_validator("points")
     @classmethod
@@ -182,7 +181,7 @@ class PolygonGeometry(BaseModel):
 
 
 class KeypointGeometry(BaseModel):
-    points: list[dict[str, float]]  # [{"x":0.1,"y":0.2,"v":2},...]
+    points: list[dict[str, float]]
 
 
 class AnnotationCreate(BaseModel):
@@ -217,16 +216,17 @@ class AnnotationResponse(OrmBase):
 
 
 class AIReviewAction(BaseModel):
-    """Bulk review: accept, edit, or reject AI suggestions."""
     annotation_id: int
     action: str = Field(pattern="^(accept|edit|reject)$")
-    geometry: dict[str, Any] | None = None   # provided when action == "edit"
-    label_class_id: int | None = None         # reclassify if needed
+    geometry: dict[str, Any] | None = None
+    label_class_id: int | None = None
 
 
 # ── ML Models ─────────────────────────────────────────────────────────────────
 
 class MLModelResponse(OrmBase):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     id: int
     project_id: int
     name: str
@@ -242,6 +242,8 @@ class MLModelResponse(OrmBase):
 # ── AI Jobs ───────────────────────────────────────────────────────────────────
 
 class AIJobCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_id: int
     batch_id: int
     job_type: JobType = JobType.INFERENCE
@@ -249,6 +251,8 @@ class AIJobCreate(BaseModel):
 
 
 class AIJobResponse(OrmBase):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     id: int
     model_id: int
     batch_id: int
@@ -261,16 +265,6 @@ class AIJobResponse(OrmBase):
     result_summary: dict[str, Any]
     error_message: str
     confidence_threshold: float
-
-
-# ── Export ────────────────────────────────────────────────────────────────────
-
-class ExportRequest(BaseModel):
-    batch_id: int
-    format: str = Field(pattern="^(coco|yolo|yolo_seg|voc|csv)$")
-    include_ai_suggestions: bool = False
-    include_images: bool = True
-    val_split: float = Field(default=0.2, ge=0.0, le=0.5)
 
 
 # ── WebSocket events (broadcasted) ────────────────────────────────────────────
