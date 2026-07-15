@@ -1,4 +1,4 @@
-# 🐠 MarineAnnotate
+# MarineAnnotate
 
 In-house annotation platform for underwater marine imagery — seagrasses, macroalgae, and fish species.
 
