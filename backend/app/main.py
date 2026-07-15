@@ -63,7 +63,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(projects.router)
-app.include_router(images_router)
+app.include_router(images_router)   # includes the DELETE /api/batches/{id}/images/{id} route
 app.include_router(files_router)
 app.include_router(annotations.router)
 app.include_router(ai.router)
