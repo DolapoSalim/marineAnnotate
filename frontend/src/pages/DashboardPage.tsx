@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FolderOpen, Users, Image, LogOut } from 'lucide-react';
+import { Plus, FolderOpen, Users, Image, LogOut, Shield } from 'lucide-react';
 import { projectsApi } from '../api';
 import { useAuthStore } from '../store';
+import { Logo } from '../components/ui/Logo';
 import type { Project } from '../types';
 
 export const DashboardPage: React.FC = () => {
@@ -34,17 +35,17 @@ export const DashboardPage: React.FC = () => {
         borderBottom: '0.5px solid rgba(255,255,255,0.08)',
         background: 'rgba(255,255,255,0.02)',
       }}>
-        <span style={{ fontSize: 18, marginRight: 8 }}>🐠</span>
-        <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>MarineAnnotate</span>
+        <Logo size={24} showName={true} />
+        <div style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginRight: 16 }}>
           {user?.full_name} · <span style={{ textTransform: 'capitalize' }}>{user?.role}</span>
         </span>
         {user?.role === 'admin' && (
           <button onClick={() => navigate('/admin')} style={ghostBtn}>
-            Admin
+            <Shield size={13} /> Admin
           </button>
         )}
-        <button onClick={clearAuth} style={{ ...ghostBtn, marginLeft: 8 }}>
+        <button onClick={clearAuth} style={{ ...ghostBtn, marginLeft: 8 }} title="Sign out">
           <LogOut size={14} />
         </button>
       </div>
@@ -66,7 +67,6 @@ export const DashboardPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Create modal */}
         {showCreate && (
           <div style={modalOverlay}>
             <div style={modalBox}>
@@ -90,16 +90,12 @@ export const DashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* Grid */}
         {loading ? (
           <div style={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center', paddingTop: 60 }}>
             Loading projects…
           </div>
         ) : projects.length === 0 ? (
-          <div style={{
-            textAlign: 'center', padding: '60px 0',
-            color: 'rgba(255,255,255,0.3)',
-          }}>
+          <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.3)' }}>
             <FolderOpen size={40} style={{ marginBottom: 12, opacity: 0.4 }} />
             <div>No projects yet. Create your first one.</div>
           </div>
@@ -124,12 +120,8 @@ export const DashboardPage: React.FC = () => {
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-                  <span style={statBadge}>
-                    <Image size={12} /> {p.image_count} images
-                  </span>
-                  <span style={statBadge}>
-                    <Users size={12} /> {p.member_count} members
-                  </span>
+                  <span style={statBadge}><Image size={12} /> {p.image_count} images</span>
+                  <span style={statBadge}><Users size={12} /> {p.member_count} members</span>
                 </div>
               </div>
             ))}
@@ -145,33 +137,26 @@ const ghostBtn: React.CSSProperties = {
   background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 12,
   display: 'flex', alignItems: 'center', gap: 4,
 };
-
 const statBadge: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 4,
-  fontSize: 12, color: 'rgba(255,255,255,0.4)',
+  display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(255,255,255,0.4)',
 };
-
 const modalOverlay: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
 };
-
 const modalBox: React.CSSProperties = {
   background: '#1a2535', border: '0.5px solid rgba(255,255,255,0.1)',
   borderRadius: 14, padding: '28px', width: 420,
 };
-
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14,
   background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.12)',
   color: '#e8edf2', outline: 'none', boxSizing: 'border-box', display: 'block',
 };
-
 const primaryBtn: React.CSSProperties = {
   flex: 1, padding: '9px', borderRadius: 8, border: 'none',
   background: '#1D9E75', color: '#fff', fontWeight: 500, fontSize: 13, cursor: 'pointer',
 };
-
 const cancelBtn: React.CSSProperties = {
   flex: 1, padding: '9px', borderRadius: 8,
   border: '0.5px solid rgba(255,255,255,0.12)',
