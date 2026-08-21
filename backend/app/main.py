@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.core.database import engine, Base
 from app.core.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import auth, users, projects, annotations, ai, export, websocket
 from app.routers.images import router as images_router, images_router as files_router
@@ -14,8 +13,12 @@ from app.routers.invites import router as invites_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Schema is managed by Alembic migrations (see backend/alembic/), run via
+    # `alembic upgrade head` in the container's entrypoint before uvicorn
+    # starts — not by create_all. create_all only ever adds missing tables;
+    # it silently does nothing for column/type changes to existing tables,
+    # which made every schema change since the first deploy a no-op for
+    # anyone who'd already installed this.
     await _seed_admin()
     os.makedirs(settings.IMAGES_PATH, exist_ok=True)
     os.makedirs(settings.MODELS_PATH, exist_ok=True)
