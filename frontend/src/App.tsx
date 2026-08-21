@@ -9,6 +9,8 @@ import { ImageGalleryPage } from './pages/ImageGalleryPage';
 import { AnnotationPage } from './pages/AnnotationPage';
 import { AdminPage } from './pages/AdminPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { useAuthStore } from './store';
 
 const queryClient = new QueryClient();
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Protected */}
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

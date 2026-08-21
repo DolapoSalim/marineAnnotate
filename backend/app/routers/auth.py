@@ -1,13 +1,16 @@
 from datetime import timezone, datetime
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.email import send_password_reset_email
 from app.core.security import (
-    create_access_token, create_refresh_token,
+    create_access_token, create_refresh_token, hash_password,
     get_current_user_id_from_refresh, verify_password, CurrentUserID,
 )
 from app.core.config import settings
@@ -16,6 +19,24 @@ from app.schemas import Token, UserResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+PASSWORD_RESET_TTL_SECONDS = 3600  # 1 hour, single-use
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
 
 
 async def _check_rate_limit(request: Request, email: str) -> None:
@@ -75,6 +96,28 @@ async def _clear_ip_rate_limit(request: Request) -> None:
         from app.core.redis import redis_client
         ip = request.client.host if request.client else "unknown"
         await redis_client.delete(f"login_attempts:{ip}")
+    except Exception:
+        pass
+
+
+async def _set_reset_token(token: str, user_id: int) -> None:
+    from app.core.redis import redis_client
+    await redis_client.setex(f"pwreset:{token}", PASSWORD_RESET_TTL_SECONDS, str(user_id))
+
+
+async def _get_reset_user_id(token: str) -> int | None:
+    try:
+        from app.core.redis import redis_client
+        raw = await redis_client.get(f"pwreset:{token}")
+        return int(raw) if raw else None
+    except Exception:
+        return None
+
+
+async def _delete_reset_token(token: str) -> None:
+    try:
+        from app.core.redis import redis_client
+        await redis_client.delete(f"pwreset:{token}")
     except Exception:
         pass
 
@@ -206,3 +249,44 @@ async def get_me(user_id: CurrentUserID, db: DbDep) -> UserResponse:
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(
+    payload: ForgotPasswordRequest, request: Request, db: DbDep
+) -> dict:
+    """
+    Self-service password reset request. Mirrors the invite flow: a
+    single-use token stored in Redis, emailed as a link. No admin ever sees
+    or sets another user's password — same principle as invites.
+    """
+    await _check_rate_limit(request, payload.email)
+
+    email = payload.email.lower().strip()
+    user = await get_user_by_email(db, email)
+    # Always return the same response whether or not the account exists —
+    # a differing response here is a user-enumeration leak.
+    if user and user.is_active:
+        token = uuid4().hex
+        await _set_reset_token(token, user.id)
+        reset_url = f"{settings.APP_URL}/reset-password?token={token}"
+        await send_password_reset_email(user.email, reset_url)
+
+    return {"message": "If that email is registered, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetPasswordRequest, db: DbDep) -> dict:
+    user_id = await _get_reset_user_id(payload.token)
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+
+    user = await get_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Account no longer exists")
+
+    user.hashed_password = hash_password(payload.new_password)
+    await db.commit()
+    await _delete_reset_token(payload.token)
+    await _clear_failed_attempts(user.email)
+    return {"message": "Password updated — you can now sign in."}

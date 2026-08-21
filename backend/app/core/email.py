@@ -90,3 +90,80 @@ async def send_invite_email(
     except Exception as e:
         print(f"Email send failed: {e}")
         return False
+
+
+def _build_reset_html(reset_url: str) -> str:
+    return f"""
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0f1923;font-family:Georgia,serif">
+  <div style="max-width:520px;margin:40px auto;background:#1a2535;border-radius:16px;overflow:hidden">
+    <div style="background:linear-gradient(135deg,#0a1628,#0b3d2e);padding:40px;text-align:center">
+      <div style="font-size:48px">🐠</div>
+      <h1 style="color:#fff;font-size:24px;margin:12px 0 4px">MarineAnnotate</h1>
+      <p style="color:rgba(255,255,255,0.5);font-size:13px;margin:0">Password reset request</p>
+    </div>
+    <div style="padding:36px">
+      <p style="color:#e8edf2;font-size:15px;line-height:1.6">
+        Someone (hopefully you) requested a password reset for this account.
+      </p>
+      <p style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.6">
+        Click the button below to choose a new password. This link expires in <strong>1 hour</strong>
+        and can only be used once.
+      </p>
+      <div style="text-align:center;margin:32px 0">
+        <a href="{reset_url}" style="background:#1D9E75;color:#fff;padding:14px 32px;border-radius:8px;
+           text-decoration:none;font-size:15px;font-weight:600;display:inline-block">
+          Reset password →
+        </a>
+      </div>
+      <p style="color:rgba(255,255,255,0.35);font-size:12px;text-align:center">
+        Or copy this link: <br/>
+        <span style="color:#1D9E75;word-break:break-all">{reset_url}</span>
+      </p>
+    </div>
+    <div style="padding:20px;border-top:1px solid rgba(255,255,255,0.08);text-align:center">
+      <p style="color:rgba(255,255,255,0.25);font-size:12px;margin:0">
+        If you didn't request this, you can safely ignore this email — your password won't change.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+
+async def send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    """
+    Send password-reset email. Returns True on success.
+    Falls back to console log if SMTP not configured.
+    """
+    if not settings.SMTP_HOST:
+        print(f"\n{'='*60}")
+        print(f"PASSWORD RESET LINK (no SMTP configured — share manually):")
+        print(f"To: {to_email}")
+        print(f"URL: {reset_url}")
+        print(f"{'='*60}\n")
+        return True
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your MarineAnnotate password"
+    msg["From"] = settings.SMTP_FROM
+    msg["To"] = to_email
+
+    html_part = MIMEText(_build_reset_html(reset_url), "html")
+    msg.attach(html_part)
+
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.ehlo()
+            if settings.SMTP_TLS:
+                server.starttls(context=context)
+            if settings.SMTP_USER:
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_FROM, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"Email send failed: {e}")
+        return False
