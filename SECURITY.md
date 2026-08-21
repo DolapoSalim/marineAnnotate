@@ -27,23 +27,49 @@ This project does not yet have tagged releases with a formal support
 window — until it does, only the `main` branch is supported. Please make
 sure you're running the latest commit before reporting an issue.
 
+## What's Already Handled
+
+- **Postgres and Redis credentials are required, not defaulted.** `docker
+  compose up` refuses to start without `POSTGRES_PASSWORD`/`REDIS_PASSWORD`
+  set in the root `.env` (see `.env.example`) — there's no `marine`/`marine`
+  fallback to forget about.
+- **Neither Postgres nor Redis is exposed to the host network.**
+  `docker-compose.yml` no longer publishes ports 5432/6379 — only the
+  `backend` container can reach them. Use `docker compose exec db psql ...`
+  for direct DB access instead of a published port.
+- **Sessions die immediately on password reset or account disable**, not
+  just at natural token expiry (per-user `token_version` checked on every
+  request).
+- **An audit trail** (`AuditLog` table, viewable in Admin Console → Activity
+  log) records logins (success and failure), password resets, invites,
+  account/role changes, and project deletions, each with actor and IP.
+- **Dependabot** is configured (`.github/dependabot.yml`) for weekly
+  pip/npm/Docker-base-image/GitHub-Actions vulnerability scanning once this
+  repo is on GitHub.
+- **Backups are scripted** — `scripts/backup.sh` / `scripts/restore.sh`, see
+  the README's Backups section. Not automatic; still needs to be scheduled
+  (cron/Task Scheduler) per deployment.
+- Security headers (CSP, X-Frame-Options, etc.) are set on both the API
+  responses and the frontend's nginx-served static content.
+
 ## Deployment Security Checklist
 
-Since you run this yourself, some of your security posture depends on your
-deployment, not just the code. Before exposing an instance beyond
-`localhost`:
+The above is handled by the code itself. What's still left to you as the
+operator, before exposing an instance beyond `localhost`:
 
 - **Put it behind TLS.** The bundled `docker-compose.yml`/`nginx.conf` serve
   plain HTTP. Terminate TLS in front of it (a reverse proxy like Caddy or
   nginx + Let's Encrypt, or a tunnel like Tailscale/Cloudflare Tunnel) before
-  any credentials or research data cross a network you don't control.
+  any credentials or research data cross a network you don't control. This is
+  the biggest open item — until it's done, passwords and session tokens
+  travel in the clear.
 - **Set a strong, unique `SECRET_KEY`** in `backend/.env` — generate one with
   `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Never reuse
   a value from `.env.example` or another deployment.
-- **Change the seeded admin password immediately** after first login.
-- **Don't expose Postgres or Redis ports** beyond the Docker network — the
-  `docker-compose.yml` maps them to the host for local development
-  convenience; remove those port mappings in any deployment reachable from
-  outside your machine.
-- **Back up regularly.** The Postgres volume and `storage/` directory are the
-  entire product — there's no built-in backup mechanism yet.
+- **Set a strong `FIRST_ADMIN_PASSWORD`** in `backend/.env` before first
+  boot — there's no in-app "change my own password" yet, only the
+  email-based forgot/reset flow, so this is effectively permanent until you
+  use that flow.
+- **Actually schedule `scripts/backup.sh`** (cron or Task Scheduler) and copy
+  the `backups/` directory offsite periodically — a backup script that never
+  runs isn't a backup.

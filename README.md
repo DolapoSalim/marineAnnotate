@@ -50,20 +50,49 @@ Open **http://localhost:5173** — default login: `admin@lab.local` / `changeme1
 
 ## Docker Compose (Recommended for Lab Server)
 
+This is the setup a new lab follows end-to-end, on their own server, the first time they deploy.
+`.env` files hold real secrets and are never committed to git — each lab creates its own from the
+`.env.example` templates below and fills in its own values locally.
+
 ```bash
-# Copy and edit env — two files:
-cp backend/.env.example backend/.env       # app config (SECRET_KEY, SMTP, etc.)
+git clone <this repo>
+cd marineAnnotate
+
+# Copy the two env templates:
+cp backend/.env.example backend/.env       # app config (SECRET_KEY, SMTP, admin account, etc.)
 cp .env.example .env                       # Postgres/Redis passwords (repo root)
-
-# Generate strong values for POSTGRES_PASSWORD and REDIS_PASSWORD in .env:
-python -c "import secrets; print(secrets.token_urlsafe(24))"
-
-# Build and start
-docker compose up --build
-
-# Open
-open http://localhost:5173
 ```
+
+Now edit both files:
+
+**`backend/.env`** — at minimum, set:
+
+- `SECRET_KEY` — generate one, never leave the placeholder: `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+- `FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_PASSWORD` — becomes the very first admin account, auto-created
+  on first boot. Use a strong password here — there's currently no in-app "change my own password"
+  option, only the email-based forgot/reset flow, so whatever you set here (or later reset it to) is
+  what sticks.
+- `APP_URL` — the real address your team will reach it at (e.g. `http://192.168.1.50:5173`), **not**
+  `localhost` if this is a shared server. This gets embedded in every invite/reset email link.
+- `SMTP_*` — optional, but without it invite/reset links only print to `docker compose logs backend`
+  instead of emailing. Worth configuring before onboarding real people (see the SMTP note in
+  [SECURITY.md](SECURITY.md) for the Gmail App Password setup used during development).
+
+**`.env`** (repo root) — generate strong values for `POSTGRES_PASSWORD` and `REDIS_PASSWORD`:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+Then build and start:
+
+```bash
+docker compose up --build -d
+open http://localhost:5173   # or your server's address
+```
+
+Log in with the `FIRST_ADMIN_EMAIL`/`FIRST_ADMIN_PASSWORD` you set above — see
+[Inviting Lab Members](#inviting-lab-members) below for onboarding the rest of the team.
 
 Images and models persist in `./storage/` on the host. Postgres and Redis are not exposed to the
 host network — only the `backend` container can reach them — so `POSTGRES_PASSWORD`/`REDIS_PASSWORD`
@@ -161,6 +190,26 @@ marineAnnotate/
 | **Admin** | Everything + create/manage users |
 | **Reviewer** | Annotate + approve/reject annotations |
 | **Annotator** | Annotate images in assigned projects |
+
+---
+
+## Inviting Lab Members
+
+There's no public sign-up page — accounts are always admin-invited. This is deliberate: nothing
+about this app should be reachable by someone who wasn't given access on purpose.
+
+1. Log in as an admin and open the **Admin Console**.
+2. Click **Invite member**, fill in their name, email, and role, and send.
+3. They receive an email with a link (or, if SMTP isn't configured yet, an admin fetches the link
+   from `docker compose logs backend` — it's printed there as a fallback).
+4. They open the link, set **their own password** (the admin never sees or sets it), and can log in
+   immediately.
+5. Platform account access and project access are separate steps. To get them working on a specific
+   project, open that **Project → Members** and add them from the member list — they need an
+   account first (steps 1–4) before they can be added to any project.
+
+Every invite sent, and every account created, role change, or disable/enable, is recorded in the
+**Activity log** in the Admin Console — see [SECURITY.md](SECURITY.md) for what else is logged.
 
 ---
 
