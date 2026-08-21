@@ -11,7 +11,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 python-multipart==0.0.9
 aiofiles==23.2.1
-pillow==10.3.0
+pillow==12.3.0
 torch==2.3.0
 ultralytics==8.2.18
 celery[redis]==5.4.0
