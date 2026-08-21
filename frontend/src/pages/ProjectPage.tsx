@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, Plus, Bot, Download, Users } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, Bot, Download, Users, Trash2 } from 'lucide-react';
 import { Logo } from '../components/ui/Logo';
 import { ExportModal } from '../components/ExportModal';
 import { projectsApi, imagesApi, exportApi } from '../api';
-import { useProjectStore } from '../store';
+import { useProjectStore, useAuthStore } from '../store';
 import type { Project, ImageBatch, LabelClass, MLModel, AIJob } from '../types';
 
 export const ProjectPage: React.FC = () => {
@@ -12,6 +12,7 @@ export const ProjectPage: React.FC = () => {
   const id = Number(projectId);
   const navigate = useNavigate();
   const { setProject, setLabels } = useProjectStore();
+  const { user } = useAuthStore();
 
   const [project, setProjectData] = useState<Project | null>(null);
   const [batches, setBatches] = useState<ImageBatch[]>([]);
@@ -31,6 +32,9 @@ export const ProjectPage: React.FC = () => {
   const [showNewLabel, setShowNewLabel] = useState(false);
   const [activeBatchId, setActiveBatchId] = useState<number | null>(null);
   const [exportBatch, setExportBatch] = useState<{ id: number; name: string } | null>(null);
+  const [showDeleteProject, setShowDeleteProject] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     setProject(id);
@@ -82,6 +86,18 @@ export const ProjectPage: React.FC = () => {
     setJobs((j) => [res.data, ...j]);
   };
 
+  const handleDeleteProject = async () => {
+    setDeletingProject(true);
+    setDeleteError(null);
+    try {
+      await projectsApi.delete(id);
+      navigate('/dashboard');
+    } catch (err: any) {
+      setDeleteError(err.response?.data?.detail || err.message || 'Failed to delete project');
+      setDeletingProject(false);
+    }
+  };
+
   const downloadExport = async (batchId: number, format: string) => {
     const res = await exportApi.export(batchId, format);
     const url = URL.createObjectURL(res.data);
@@ -109,6 +125,16 @@ export const ProjectPage: React.FC = () => {
         <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
           {project?.description}
         </span>
+        <div style={{ flex: 1 }} />
+        {project && user && project.created_by === user.id && (
+          <button
+            onClick={() => setShowDeleteProject(true)}
+            style={{ ...iconBtn, color: '#E24B4A', borderColor: 'rgba(226,75,74,0.3)' }}
+            title="Delete this project"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -313,6 +339,48 @@ export const ProjectPage: React.FC = () => {
           batchName={exportBatch.name}
           onClose={() => setExportBatch(null)}
         />
+      )}
+
+      {/* Delete project confirmation */}
+      {showDeleteProject && project && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: '#1a2535', border: '0.5px solid rgba(255,255,255,0.1)',
+            borderRadius: 14, padding: 24, width: 380,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <Trash2 size={18} style={{ color: '#E24B4A' }} />
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Delete this project?</span>
+            </div>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 8 }}>
+              <strong style={{ color: '#e8edf2' }}>{project.name}</strong> — every batch, image, annotation,
+              label class, and uploaded model in it — will be permanently deleted. This cannot be undone.
+            </p>
+            {deleteError && (
+              <p style={{ fontSize: 12, color: '#f87171', marginBottom: 8 }}>{deleteError}</p>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button
+                onClick={() => { setShowDeleteProject(false); setDeleteError(null); }}
+                disabled={deletingProject}
+                style={{ flex: 1, padding: '9px', borderRadius: 8, border: '0.5px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button onClick={handleDeleteProject} disabled={deletingProject} style={{
+                flex: 1, padding: '9px', borderRadius: 8, border: 'none',
+                background: '#E24B4A', color: '#fff', fontSize: 13, fontWeight: 500,
+                cursor: deletingProject ? 'not-allowed' : 'pointer', opacity: deletingProject ? 0.6 : 1,
+              }}>
+                {deletingProject ? 'Deleting…' : 'Delete permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       </div>
     </div>

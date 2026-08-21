@@ -57,7 +57,7 @@ export const AdminPage: React.FC = () => {
         background: 'rgba(255,255,255,0.015)', backdropFilter: 'blur(12px)',
         position: 'sticky', top: 0, zIndex: 10,
       }}>
-        <button onClick={() => navigate('/')} style={iconBtn}><ArrowLeft size={15} /></button>
+        <button onClick={() => navigate('/dashboard')} style={iconBtn}><ArrowLeft size={15} /></button>
         <Logo size={24} showName={false} />
         <Shield size={16} style={{ color: '#EF9F27' }} />
         <span style={{ fontWeight: 600, fontSize: 14 }}>Admin Console</span>

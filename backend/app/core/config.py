@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    @field_validator("SMTP_PORT", mode="before")
+    @classmethod
+    def _blank_smtp_port_uses_default(cls, v):
+        # SMTP is documented as "optional — leave blank if unused", but an empty
+        # string in .env fails int parsing and crashes the whole app at import
+        # time — not just email sending. Treat blank the same as unset.
+        if v == "":
+            return 587
+        return v
 
 
 @lru_cache

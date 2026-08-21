@@ -86,6 +86,7 @@ export const projectsApi = {
   create: (data: unknown) => api.post('/api/projects/', data),
   get: (id: number) => api.get(`/api/projects/${id}`),
   update: (id: number, data: unknown) => api.patch(`/api/projects/${id}`, data),
+  delete: (id: number) => api.delete(`/api/projects/${id}`),
   members: (id: number) => api.get(`/api/projects/${id}/members`),
   addMember: (id: number, data: unknown) => api.post(`/api/projects/${id}/members`, data),
   labels: (id: number) => api.get(`/api/projects/${id}/labels`),
