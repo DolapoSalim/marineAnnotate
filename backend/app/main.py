@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.middleware import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
-from app.routers import auth, users, projects, annotations, ai, export, websocket
+from app.routers import auth, users, projects, annotations, ai, export, websocket, audit
 from app.routers.images import router as images_router, images_router as files_router
 from app.routers.invites import router as invites_router
 
@@ -73,6 +73,7 @@ app.include_router(ai.router)
 app.include_router(export.router)
 app.include_router(websocket.router)
 app.include_router(invites_router)
+app.include_router(audit.router)
 
 
 @app.get("/health")

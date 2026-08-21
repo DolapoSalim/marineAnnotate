@@ -18,6 +18,18 @@ export interface User {
   last_login: string | null;
 }
 
+export interface AuditLogEntry {
+  id: number;
+  created_at: string;
+  action: string;
+  actor_user_id: number | null;
+  actor_email: string;
+  target_type: string | null;
+  target_id: string | null;
+  ip_address: string | null;
+  detail: Record<string, unknown>;
+}
+
 // ── Projects ──────────────────────────────────────────────────────────────────
 export type ProjectRole = 'owner' | 'reviewer' | 'annotator';
 

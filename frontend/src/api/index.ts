@@ -83,6 +83,12 @@ export const usersApi = {
   update: (id: number, data: unknown) => api.patch(`/api/users/${id}`, data),
 };
 
+// ── Admin ─────────────────────────────────────────────────────────────────────
+export const adminApi = {
+  auditLog: (skip = 0, limit = 100) =>
+    api.get('/api/admin/audit-log', { params: { skip, limit } }),
+};
+
 // ── Projects ──────────────────────────────────────────────────────────────────
 export const projectsApi = {
   list: () => api.get('/api/projects/'),

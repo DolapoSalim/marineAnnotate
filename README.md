@@ -51,8 +51,12 @@ Open **http://localhost:5173** — default login: `admin@lab.local` / `changeme1
 ## Docker Compose (Recommended for Lab Server)
 
 ```bash
-# Copy and edit env
-cp backend/.env.example backend/.env
+# Copy and edit env — two files:
+cp backend/.env.example backend/.env       # app config (SECRET_KEY, SMTP, etc.)
+cp .env.example .env                       # Postgres/Redis passwords (repo root)
+
+# Generate strong values for POSTGRES_PASSWORD and REDIS_PASSWORD in .env:
+python -c "import secrets; print(secrets.token_urlsafe(24))"
 
 # Build and start
 docker compose up --build
@@ -61,7 +65,10 @@ docker compose up --build
 open http://localhost:5173
 ```
 
-Images and models persist in `./storage/` on the host.
+Images and models persist in `./storage/` on the host. Postgres and Redis are not exposed to the
+host network — only the `backend` container can reach them — so `POSTGRES_PASSWORD`/`REDIS_PASSWORD`
+only need to be strong, not memorable. For admin access to the database directly, use
+`docker compose exec db psql -U marine marine_annotate` rather than exposing the port.
 
 ---
 
@@ -177,3 +184,22 @@ app for them makes your lab a data controller under GDPR for the account data ab
 one who decides how long it's retained and who can delete it (an admin can deactivate an account
 via the Admin console; there's no self-service "delete my account" flow yet). See
 [SECURITY.md](SECURITY.md) for hardening a deployment beyond `localhost`.
+
+---
+
+## Backups
+
+Nothing is backed up automatically — set this up before you have real project data on it.
+
+```bash
+# One-off backup (dumps the database + archives storage/ into ./backups/)
+./scripts/backup.sh
+
+# Restore from a backup (DESTRUCTIVE — overwrites current data)
+./scripts/restore.sh backups/db_20260821_020000.sql.gz backups/storage_20260821_020000.tar.gz
+```
+
+Schedule `backup.sh` to run nightly with cron (Linux/Mac) or Windows Task Scheduler. It keeps the
+last 14 backups of each kind and deletes older ones — adjust `KEEP` in the script if you want more
+history. Copy the `backups/` directory offsite periodically (a local backup on the same disk as the
+database doesn't protect you from disk failure).
