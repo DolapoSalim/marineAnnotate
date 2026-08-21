@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import CurrentUserID
 from app.core.uploads import (
     MODEL_EXTENSIONS,
@@ -143,6 +144,10 @@ async def create_job(
     db: DbDep,
 ) -> AIJobResponse:
     await _check_access(project_id, user_id, db)
+    # Inference currently runs synchronously in-process (see services/inference.py) —
+    # one job blocks the whole API until it finishes, so queuing many back-to-back
+    # is a real self-inflicted DoS risk, not just abuse from outsiders.
+    await enforce_rate_limit(f"ratelimit:ai_job:{user_id}", max_calls=5, window_seconds=300)
 
     model = await db.get(MLModel, payload.model_id)
     if not model or model.project_id != project_id:
