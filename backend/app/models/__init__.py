@@ -236,6 +236,25 @@ class MLModel(Base):
     jobs: Mapped[list[AIJob]] = relationship(back_populates="model")
 
 
+class AuditLog(Base):
+    """
+    Security/activity trail — logins, password resets, invites, and admin
+    actions (role changes, account disable/enable, project deletion). Not an
+    ORM relationship target; queried standalone by the admin audit-log view.
+    """
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    action: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    actor_email: Mapped[str] = mapped_column(String(255), default="")
+    target_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class AIJob(Base):
     __tablename__ = "ai_jobs"
 

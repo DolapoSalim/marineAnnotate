@@ -105,6 +105,9 @@ data/
 storage/images/
 storage/models/
 
+# Database/storage backups — contain user data, never commit
+backups/
+
 # =========================
 # DOCKER COMPOSE OVERRIDES
 # =========================

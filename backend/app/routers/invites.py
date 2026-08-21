@@ -10,11 +10,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import client_ip, log_event
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.email import send_invite_email
@@ -76,6 +77,7 @@ async def send_invite(
     payload: InviteCreate,
     user_id: CurrentUserID,
     db: DbDep,
+    request: Request,
 ) -> dict:
     admin = await _require_admin(user_id, db)
     await enforce_rate_limit(f"ratelimit:invite:{user_id}", max_calls=20, window_seconds=3600)
@@ -94,6 +96,9 @@ async def send_invite(
 
     invite_url = f"{settings.APP_URL}/accept-invite?token={token}"
     sent = await send_invite_email(payload.email, invite_url, admin.full_name)
+    await log_event(db, "invite_sent", actor_user_id=admin.id, actor_email=admin.email,
+                     target_type="user_invite", target_id=payload.email,
+                     ip_address=client_ip(request), detail={"role": payload.role.value})
 
     return {
         "message": "Invite sent" if sent else "Invite created (check server logs for link)",
@@ -115,7 +120,7 @@ async def validate_invite(token: str) -> dict:
 
 
 @router.post("/accept")
-async def accept_invite(payload: InviteAccept, db: DbDep) -> UserResponse:
+async def accept_invite(payload: InviteAccept, request: Request, db: DbDep) -> UserResponse:
     invite = await _get_invite(payload.token)
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found or already used")
@@ -129,4 +134,6 @@ async def accept_invite(payload: InviteAccept, db: DbDep) -> UserResponse:
         role=invite["role"],
     ))
     await _delete_invite(payload.token)
+    await log_event(db, "invite_accepted", actor_user_id=user.id, actor_email=user.email,
+                     target_type="user", target_id=user.id, ip_address=client_ip(request))
     return user

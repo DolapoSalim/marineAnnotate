@@ -7,6 +7,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import client_ip, log_event
 from app.core.database import get_db
 from app.core.email import send_password_reset_email
 from app.core.security import (
@@ -148,6 +149,7 @@ async def login(
     user = await get_user_by_email(db, email)
     if not user or not verify_password(form.password, user.hashed_password):
         await _track_failed_attempt(email)
+        await log_event(db, "login_failed", actor_email=email, ip_address=client_ip(request))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -155,12 +157,15 @@ async def login(
         )
 
     if not user.is_active:
+        await log_event(db, "login_failed", actor_user_id=user.id, actor_email=email,
+                         ip_address=client_ip(request), detail={"reason": "disabled"})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
     await _clear_failed_attempts(email)
     await _clear_ip_rate_limit(request)
     user.last_login = datetime.now(timezone.utc)
     await db.commit()
+    await log_event(db, "login_success", actor_user_id=user.id, actor_email=email, ip_address=client_ip(request))
 
     access_token = create_access_token(str(user.id), user.token_version)
     refresh_token = create_refresh_token(str(user.id), user.token_version)
@@ -272,12 +277,14 @@ async def forgot_password(
         await _set_reset_token(token, user.id)
         reset_url = f"{settings.APP_URL}/reset-password?token={token}"
         await send_password_reset_email(user.email, reset_url)
+        await log_event(db, "password_reset_requested", actor_user_id=user.id,
+                         actor_email=user.email, ip_address=client_ip(request))
 
     return {"message": "If that email is registered, a reset link has been sent."}
 
 
 @router.post("/reset-password")
-async def reset_password(payload: ResetPasswordRequest, db: DbDep) -> dict:
+async def reset_password(payload: ResetPasswordRequest, request: Request, db: DbDep) -> dict:
     user_id = await _get_reset_user_id(payload.token)
     if user_id is None:
         raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
@@ -295,4 +302,6 @@ async def reset_password(payload: ResetPasswordRequest, db: DbDep) -> dict:
     await db.commit()
     await _delete_reset_token(payload.token)
     await _clear_failed_attempts(user.email)
+    await log_event(db, "password_reset_completed", actor_user_id=user.id,
+                     actor_email=user.email, ip_address=client_ip(request))
     return {"message": "Password updated — you can now sign in."}

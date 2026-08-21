@@ -1,10 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, Eye, Edit3, Send, UserX, UserCheck, Clock, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { ArrowLeft, Shield, Eye, Edit3, Send, UserX, UserCheck, Clock, CheckCircle, AlertCircle, X, History, ChevronDown, ChevronUp } from 'lucide-react';
 import { Logo } from '../components/ui/Logo';
-import { usersApi, api } from '../api';
+import { usersApi, adminApi, api } from '../api';
 import { useAuthStore } from '../store';
-import type { User, UserRole } from '../types';
+import type { User, UserRole, AuditLogEntry } from '../types';
+
+const ACTION_LABELS: Record<string, string> = {
+  login_success: 'Signed in',
+  login_failed: 'Failed sign-in attempt',
+  password_reset_requested: 'Requested password reset',
+  password_reset_completed: 'Reset password',
+  invite_sent: 'Sent invite',
+  invite_accepted: 'Accepted invite',
+  user_created: 'Created user',
+  user_role_changed: 'Changed role',
+  user_status_changed: 'Enabled/disabled account',
+  project_deleted: 'Deleted project',
+};
 
 export const AdminPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -12,10 +25,17 @@ export const AdminPage: React.FC = () => {
   const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'annotator' as UserRole });
   const [inviteStatus, setInviteStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [sending, setSending] = useState(false);
+  const [showLog, setShowLog] = useState(false);
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[] | null>(null);
   const { user: me } = useAuthStore();
   const navigate = useNavigate();
 
   useEffect(() => { usersApi.list().then(r => setUsers(r.data)); }, []);
+
+  const toggleLog = () => {
+    setShowLog(v => !v);
+    if (!auditLog) adminApi.auditLog().then(r => setAuditLog(r.data));
+  };
 
   const sendInvite = async () => {
     if (!inviteForm.email || !inviteForm.full_name) return;
@@ -197,6 +217,46 @@ export const AdminPage: React.FC = () => {
               )}
             </div>
           ))}
+        </div>
+
+        {/* Activity log */}
+        <div style={{ marginTop: 32 }}>
+          <button onClick={toggleLog} style={{
+            display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500,
+            background: 'none', border: 'none', color: '#e8edf2', cursor: 'pointer', padding: 0,
+          }}>
+            <History size={15} /> Activity log
+            {showLog ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          {showLog && (
+            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {auditLog === null && (
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>Loading…</div>
+              )}
+              {auditLog?.length === 0 && (
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>No activity recorded yet.</div>
+              )}
+              {auditLog?.map(entry => (
+                <div key={entry.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12, fontSize: 12,
+                  padding: '8px 12px', borderRadius: 8,
+                  background: 'rgba(255,255,255,0.02)', border: '0.5px solid rgba(255,255,255,0.05)',
+                }}>
+                  <span style={{ color: 'rgba(255,255,255,0.35)', minWidth: 130, flexShrink: 0 }}>
+                    {new Date(entry.created_at).toLocaleString()}
+                  </span>
+                  <span style={{ fontWeight: 500, minWidth: 170, flexShrink: 0 }}>
+                    {ACTION_LABELS[entry.action] || entry.action}
+                  </span>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.actor_email || '—'}
+                  </span>
+                  <span style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>{entry.ip_address || ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

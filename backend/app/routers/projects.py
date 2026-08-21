@@ -1,10 +1,11 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import client_ip, log_event
 from app.core.database import get_db
 from app.core.security import CurrentUserID
 from app.crud import (
@@ -80,13 +81,14 @@ async def update_project_detail(
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_project_detail(project_id: int, user_id: CurrentUserID, db: DbDep) -> None:
+async def delete_project_detail(project_id: int, user_id: CurrentUserID, db: DbDep, request: Request) -> None:
     member = await check_project_access(project_id, user_id, db)
     if member.role not in (ProjectRole.OWNER,):
         raise HTTPException(status_code=403, detail="Owner access required")
     project = await get_project(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    project_name = project.name
 
     # Best-effort cleanup of files on disk — the DB rows (batches, images,
     # annotations, models, jobs) cascade automatically via the ORM/FK
@@ -111,6 +113,8 @@ async def delete_project_detail(project_id: int, user_id: CurrentUserID, db: DbD
 
     await db.delete(project)
     await db.commit()
+    await log_event(db, "project_deleted", actor_user_id=user_id, target_type="project",
+                     target_id=project_id, ip_address=client_ip(request), detail={"name": project_name})
 
 
 # Members
