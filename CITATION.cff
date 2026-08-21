@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use MarineAnnotate in your research, please cite it as below."
+title: "MarineAnnotate"
+type: software
+authors:
+  - family-names: Olatoye
+    given-names: Dolapo Salim
+repository-code: "https://github.com/DolapoSalim/marineAnnotate"
+license: MIT
+date-released: 2026-08-21

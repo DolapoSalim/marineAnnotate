@@ -252,3 +252,13 @@ Schedule `backup.sh` to run nightly with cron (Linux/Mac) or Windows Task Schedu
 last 14 backups of each kind and deletes older ones — adjust `KEEP` in the script if you want more
 history. Copy the `backups/` directory offsite periodically (a local backup on the same disk as the
 database doesn't protect you from disk failure).
+
+---
+
+## License & Citation
+
+MIT licensed — see [LICENSE](LICENSE). Free to use, fork, and self-host, including for other labs.
+
+If MarineAnnotate is used in published research, please cite it — see [CITATION.cff](CITATION.cff)
+(GitHub renders a ready-to-copy citation for this automatically via the "Cite this repository"
+button on the repo page).
