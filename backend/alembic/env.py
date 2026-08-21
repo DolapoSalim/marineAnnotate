@@ -48,6 +48,10 @@ async def run_migrations_online() -> None:
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        # Without this, DDL executed via the sync-bridge (run_sync) never
+        # gets committed back through the outer async connection — the
+        # migration silently "succeeds" but writes nothing.
+        await connection.commit()
     await connectable.dispose()
 
 
