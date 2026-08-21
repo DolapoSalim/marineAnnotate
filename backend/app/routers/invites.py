@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.email import send_invite_email
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import CurrentUserID
 from app.crud import get_user, get_user_by_email, create_user
 from app.models import UserRole
@@ -77,6 +78,8 @@ async def send_invite(
     db: DbDep,
 ) -> dict:
     admin = await _require_admin(user_id, db)
+    await enforce_rate_limit(f"ratelimit:invite:{user_id}", max_calls=20, window_seconds=3600)
+
     existing = await get_user_by_email(db, payload.email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
