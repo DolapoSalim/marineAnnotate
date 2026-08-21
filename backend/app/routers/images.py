@@ -77,12 +77,18 @@ async def upload_images(
     thumbs_dir.mkdir(parents=True, exist_ok=True)
 
     created = []
+    skipped: list[dict] = []
+
     for upload in files:
+        name = upload.filename or "(unnamed)"
+
         if upload.content_type not in ALLOWED_CONTENT_TYPES:
+            skipped.append({"filename": name, "reason": f"Unsupported content type '{upload.content_type}'"})
             continue
         try:
             ext = _safe_extension(upload.filename or "upload.jpg", IMAGE_EXTENSIONS)
-        except HTTPException:
+        except HTTPException as e:
+            skipped.append({"filename": name, "reason": e.detail})
             continue
 
         file_id = uuid.uuid4().hex
@@ -91,24 +97,30 @@ async def upload_images(
 
         try:
             file_size = await stream_to_disk(upload, filepath, MAX_BYTES)
-        except HTTPException:
+        except HTTPException as e:
+            skipped.append({"filename": name, "reason": e.detail})
             continue
 
         try:
             await _verify_image_magic(filepath)
-        except HTTPException:
+        except HTTPException as e:
             filepath.unlink(missing_ok=True)
+            skipped.append({"filename": name, "reason": e.detail})
             continue
 
         try:
-            pil_img = PILImage.open(filepath)
-            width, height = pil_img.size
-            pil_rgb = pil_img.convert("RGB")
-            pil_rgb.thumbnail(THUMB_SIZE)
-            pil_rgb.save(thumbpath, "JPEG", quality=85)
+            with PILImage.open(filepath) as pil_img:
+                width, height = pil_img.size
+                with pil_img.convert("RGB") as pil_rgb:
+                    pil_rgb.thumbnail(THUMB_SIZE)
+                    pil_rgb.save(thumbpath, "JPEG", quality=85)
         except Exception as e:
-            print(f"Thumbnail error: {e}")
-            width, height = 0, 0
+            # File isn't a decodable image despite passing the magic-byte check
+            # (truncated/corrupt upload) — a 0x0 record would crash AI inference
+            # later, so drop it instead of saving garbage.
+            filepath.unlink(missing_ok=True)
+            skipped.append({"filename": name, "reason": f"Could not read image: {e}"})
+            continue
 
         img = Image(
             batch_id=batch_id,
@@ -122,7 +134,7 @@ async def upload_images(
         created.append(file_id)
 
     await db.commit()
-    return {"uploaded": len(created)}
+    return {"uploaded": len(created), "skipped": skipped}
 
 
 @router.get("/{batch_id}/images/{image_id}")
@@ -145,7 +157,7 @@ async def get_image_detail(batch_id: int, image_id: int, user_id: CurrentUserID,
 async def assign_image(batch_id: int, image_id: int, payload: dict, user_id: CurrentUserID, db: DbDep) -> dict:
     await _check_batch_access(batch_id, user_id, db)
     img = await get_image(db, image_id)
-    if not img:
+    if not img or img.batch_id != batch_id:
         raise HTTPException(status_code=404, detail="Image not found")
     img.assigned_to = payload.get("user_id")
     await db.commit()
@@ -191,29 +203,32 @@ def _safe_path(img: Image, storage_root: Path, thumb: bool = False) -> Path:
     return p
 
 
-@images_router.get("/{image_id}/file")
-async def serve_image(image_id: int, user_id: CurrentUserID, db: DbDep) -> FileResponse:
+async def _get_image_or_404_checked(image_id: int, user_id: int, db: AsyncSession) -> Image:
+    """Fetch an image and verify the caller is a member of its project."""
     img = await get_image(db, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
+    await _check_batch_access(img.batch_id, user_id, db)
+    return img
+
+
+@images_router.get("/{image_id}/file")
+async def serve_image(image_id: int, user_id: CurrentUserID, db: DbDep) -> FileResponse:
+    img = await _get_image_or_404_checked(image_id, user_id, db)
     p = _safe_path(img, Path(settings.IMAGES_PATH))
     return FileResponse(str(p), headers={"Cache-Control": "private, max-age=3600"})
 
 
 @images_router.get("/{image_id}/thumbnail")
 async def serve_thumbnail(image_id: int, user_id: CurrentUserID, db: DbDep) -> FileResponse:
-    img = await get_image(db, image_id)
-    if not img:
-        raise HTTPException(status_code=404, detail="Image not found")
+    img = await _get_image_or_404_checked(image_id, user_id, db)
     p = _safe_path(img, Path(settings.IMAGES_PATH), thumb=True)
     return FileResponse(str(p), headers={"Cache-Control": "private, max-age=3600"})
 
 
 @images_router.post("/{image_id}/complete")
 async def mark_image_complete(image_id: int, user_id: CurrentUserID, db: DbDep) -> dict:
-    img = await get_image(db, image_id)
-    if not img:
-        raise HTTPException(status_code=404, detail="Image not found")
+    img = await _get_image_or_404_checked(image_id, user_id, db)
     img.status = ImageStatus.ANNOTATED
     await db.commit()
     return {"status": "annotated"}

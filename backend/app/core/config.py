@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     STORAGE_PATH: str = "./storage"
     MODELS_PATH: str = "./storage/models"
     IMAGES_PATH: str = "./storage/images"
-    MAX_UPLOAD_SIZE_MB: int = 50
+    MAX_UPLOAD_SIZE_MB: int = 50        # per-file limit (images)
+    MAX_REQUEST_SIZE_MB: int = 2200     # whole-request limit (covers multi-file batches + 2GB model uploads)
 
     # ── First admin ───────────────────────────────────────────────────────────
     FIRST_ADMIN_EMAIL: str = Field(...)

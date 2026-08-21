@@ -12,8 +12,9 @@ class ConnectionManager:
         # project_id -> {user_id: WebSocket}
         self._connections: dict[int, dict[int, WebSocket]] = defaultdict(dict)
 
-    async def connect(self, websocket: WebSocket, project_id: int, user_id: int) -> None:
-        await websocket.accept()
+    def connect(self, websocket: WebSocket, project_id: int, user_id: int) -> None:
+        # Caller (websocket router) has already accepted the connection and
+        # authenticated the user — accepting twice raises RuntimeError.
         self._connections[project_id][user_id] = websocket
 
     def disconnect(self, project_id: int, user_id: int) -> None:

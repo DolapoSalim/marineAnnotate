@@ -2,7 +2,14 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../store';
 import type { WSEvent } from '../types';
 
-const WS_BASE = (import.meta.env.VITE_WS_URL || 'ws://localhost:8000');
+// Same-origin by default (nginx proxies /ws to the backend) — falls back to
+// localhost:8000 only for `vite dev` outside Docker. Never hardcode a host in prod;
+// that only works on the machine running the dev server.
+const WS_BASE =
+  import.meta.env.VITE_WS_URL ||
+  (import.meta.env.DEV
+    ? 'ws://localhost:8000'
+    : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`);
 
 export function useProjectWebSocket(
   projectId: number | null,
@@ -14,8 +21,14 @@ export function useProjectWebSocket(
 
   const connect = useCallback(() => {
     if (!projectId || !token) return;
-    const ws = new WebSocket(`${WS_BASE}/ws/${projectId}?token=${token}`);
+    const ws = new WebSocket(`${WS_BASE}/ws/${projectId}`);
     wsRef.current = ws;
+
+    ws.onopen = () => {
+      // Backend requires the JWT as the first message, not in the URL —
+      // query strings get logged by proxies/CDNs.
+      ws.send(JSON.stringify({ token }));
+    };
 
     ws.onmessage = (e) => {
       try {

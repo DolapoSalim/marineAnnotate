@@ -51,55 +51,70 @@ async def run_inference_job(job_id: int) -> None:
             images = list(images_result.scalars().all())
 
             total_suggestions = 0
+            images_processed = 0
+            images_skipped: list[str] = []
             class_mapping: dict[str, int] = model_record.class_mapping  # YOLO class_id -> label_class_id
 
             for img in images:
                 if not Path(img.storage_path).exists():
+                    images_skipped.append(f"{img.filename} (file missing)")
+                    continue
+                if img.width <= 0 or img.height <= 0:
+                    # Thumbnailing failed at upload time and stored 0x0 — dividing
+                    # by these below would crash the whole job, not just this image.
+                    images_skipped.append(f"{img.filename} (unknown dimensions)")
                     continue
 
-                results = yolo(img.storage_path, conf=job.confidence_threshold, verbose=False)
+                try:
+                    results = yolo(img.storage_path, conf=job.confidence_threshold, verbose=False)
 
-                for result in results:
-                    boxes = result.boxes
-                    if boxes is None:
-                        continue
-
-                    for box in boxes:
-                        cls_id = int(box.cls[0].item())
-                        conf = float(box.conf[0].item())
-                        label_class_id = class_mapping.get(str(cls_id))
-
-                        if label_class_id is None:
+                    for result in results:
+                        boxes = result.boxes
+                        if boxes is None:
                             continue
 
-                        # Convert xyxy to normalised xywh
-                        x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        w_norm = (x2 - x1) / img.width
-                        h_norm = (y2 - y1) / img.height
-                        x_norm = x1 / img.width
-                        y_norm = y1 / img.height
+                        for box in boxes:
+                            cls_id = int(box.cls[0].item())
+                            conf = float(box.conf[0].item())
+                            label_class_id = class_mapping.get(str(cls_id))
 
-                        annotation = Annotation(
-                            image_id=img.id,
-                            label_class_id=label_class_id,
-                            annotation_type=AnnotationType.BBOX,
-                            status=AnnotationStatus.AI_SUGGESTION,
-                            geometry={"x": x_norm, "y": y_norm, "w": w_norm, "h": h_norm},
-                            confidence=conf,
-                            created_by=job.created_by,
-                        )
-                        db.add(annotation)
-                        total_suggestions += 1
+                            if label_class_id is None:
+                                continue
 
-                img.status = ImageStatus.IN_PROGRESS
+                            # Convert xyxy to normalised xywh
+                            x1, y1, x2, y2 = box.xyxy[0].tolist()
+                            w_norm = (x2 - x1) / img.width
+                            h_norm = (y2 - y1) / img.height
+                            x_norm = x1 / img.width
+                            y_norm = y1 / img.height
+
+                            annotation = Annotation(
+                                image_id=img.id,
+                                label_class_id=label_class_id,
+                                annotation_type=AnnotationType.BBOX,
+                                status=AnnotationStatus.AI_SUGGESTION,
+                                geometry={"x": x_norm, "y": y_norm, "w": w_norm, "h": h_norm},
+                                confidence=conf,
+                                created_by=job.created_by,
+                            )
+                            db.add(annotation)
+                            total_suggestions += 1
+
+                    img.status = ImageStatus.IN_PROGRESS
+                    images_processed += 1
+                except Exception as e:
+                    # One bad image (corrupt file, decode error) shouldn't fail
+                    # the whole batch — skip it and keep going.
+                    images_skipped.append(f"{img.filename} ({e})")
 
             await db.commit()
 
             job.status = JobStatus.DONE
             job.finished_at = datetime.now(timezone.utc)
             job.result_summary = {
-                "images_processed": len(images),
+                "images_processed": images_processed,
                 "total_suggestions": total_suggestions,
+                "images_skipped": images_skipped,
             }
             await db.commit()
 

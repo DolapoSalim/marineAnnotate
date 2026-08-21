@@ -108,7 +108,7 @@ async def review_ai_suggestions(
     """Bulk accept / edit / reject AI predictions for one image."""
     img, batch = await _get_image_with_access(image_id, user_id, db)
     updated = await bulk_review_ai_suggestions(
-        db, [r.model_dump() for r in reviews], user_id
+        db, image_id, [r.model_dump() for r in reviews], user_id
     )
     await manager.broadcast_to_project(
         batch.project_id,

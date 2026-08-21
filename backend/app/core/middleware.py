@@ -11,7 +11,9 @@ from app.core.config import settings
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    MAX_BYTES = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    # Whole-request ceiling (multi-file batches + model uploads), NOT the per-file
+    # limit — that's enforced separately in stream_to_disk() for each file.
+    MAX_BYTES = settings.MAX_REQUEST_SIZE_MB * 1024 * 1024
 
     async def dispatch(self, request: Request, call_next) -> Response:
         cl = request.headers.get("content-length")

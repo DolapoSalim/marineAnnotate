@@ -6,13 +6,27 @@ import asyncio
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 
+from app.core.database import AsyncSessionLocal
 from app.core.security import get_current_user_id
+from app.models import ProjectMember
 from app.services.websocket import manager
 
 router = APIRouter(tags=["websocket"])
 
 WS_AUTH_TIMEOUT = 5.0  # seconds to send auth message before disconnect
+
+
+async def _is_project_member(project_id: int, user_id: int) -> bool:
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none() is not None
 
 
 @router.websocket("/ws/{project_id}")
@@ -33,8 +47,13 @@ async def websocket_endpoint(websocket: WebSocket, project_id: int) -> None:
         await websocket.close(code=4001)
         return
 
-    # Step 2 — Register and announce
-    await manager.connect(websocket, project_id, user_id)
+    # Step 2 — Only project members may join this room
+    if not await _is_project_member(project_id, user_id):
+        await websocket.close(code=4003)
+        return
+
+    # Step 3 — Register and announce
+    manager.connect(websocket, project_id, user_id)
     try:
         await manager.broadcast_to_project(
             project_id,

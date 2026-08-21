@@ -148,6 +148,10 @@ async def create_job(
     if not model or model.project_id != project_id:
         raise HTTPException(status_code=404, detail="Model not found in this project")
 
+    batch = await db.get(ImageBatch, payload.batch_id)
+    if not batch or batch.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Batch not found in this project")
+
     job = await create_ai_job(db, payload, user_id)
     background_tasks.add_task(run_inference_job, job.id)
     return job

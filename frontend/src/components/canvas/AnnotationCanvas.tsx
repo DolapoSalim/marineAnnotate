@@ -40,6 +40,12 @@ export const AnnotationCanvas: React.FC<Props> = ({
   // Live mouse position in image-normalised space, for polygon preview + close-snap
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
+  // Geometry mid-drag, keyed by annotation id — updated on every mouse move for a
+  // smooth visual, but only sent to the server (and recorded in history) once,
+  // on drag end. Without this a single handle drag fired hundreds of PATCH
+  // requests and an AnnotationHistory row per pixel moved.
+  const [liveGeometry, setLiveGeometry] = useState<Record<number, any>>({});
+
   // Spacebar-held pan state
   const [spaceHeld, setSpaceHeld] = useState(false);
   const isPanningRef = useRef(false);
@@ -267,9 +273,31 @@ export const AnnotationCanvas: React.FC<Props> = ({
     setPan(newPanX, newPanY);
   };
 
+  // Keep width/height non-negative — dragging a handle past the opposite edge
+  // must flip which corner is "top-left" rather than store a negative size.
+  const normalizeBBox = (ng: BBoxGeometry): BBoxGeometry => {
+    let { x, y, w, h } = ng;
+    if (w < 0) { x += w; w = -w; }
+    if (h < 0) { y += h; h = -h; }
+    return { x, y, w, h };
+  };
+
+  const computeBBoxHandleGeom = (g: BBoxGeometry, i: number, np: { x: number; y: number }): BBoxGeometry => {
+    const ng = { ...g };
+    if (i === 0) { ng.w += ng.x - np.x; ng.x = np.x; ng.h += ng.y - np.y; ng.y = np.y; }
+    if (i === 1) { ng.h += ng.y - np.y; ng.y = np.y; }
+    if (i === 2) { ng.w = np.x - ng.x; ng.h += ng.y - np.y; ng.y = np.y; }
+    if (i === 3) { ng.w += ng.x - np.x; ng.x = np.x; }
+    if (i === 4) { ng.w = np.x - ng.x; }
+    if (i === 5) { ng.w += ng.x - np.x; ng.x = np.x; ng.h = np.y - ng.y; }
+    if (i === 6) { ng.h = np.y - ng.y; }
+    if (i === 7) { ng.w = np.x - ng.x; ng.h = np.y - ng.y; }
+    return ng;
+  };
+
   // ── Render bbox ───────────────────────────────────────────────────────────
   const renderBBox = (ann: Annotation) => {
-    const g = ann.geometry as BBoxGeometry;
+    const g = (liveGeometry[ann.id] ?? ann.geometry) as BBoxGeometry;
     const lc = labelById(ann.label_class_id);
     const color = lc?.color || '#EF9F27';
     const isSelected = ann.id === selectedAnnotationId;
@@ -298,16 +326,13 @@ export const AnnotationCanvas: React.FC<Props> = ({
             fill="#fff" stroke={color} strokeWidth={1.5} draggable
             onDragMove={(e) => {
               const np = toNorm(e.target.x(), e.target.y());
-              const ng = { ...g };
-              if (i === 0) { ng.w += ng.x - np.x; ng.x = np.x; ng.h += ng.y - np.y; ng.y = np.y; }
-              if (i === 1) { ng.h += ng.y - np.y; ng.y = np.y; }
-              if (i === 2) { ng.w = np.x - ng.x; ng.h += ng.y - np.y; ng.y = np.y; }
-              if (i === 3) { ng.w += ng.x - np.x; ng.x = np.x; }
-              if (i === 4) { ng.w = np.x - ng.x; }
-              if (i === 5) { ng.w += ng.x - np.x; ng.x = np.x; ng.h = np.y - ng.y; }
-              if (i === 6) { ng.h = np.y - ng.y; }
-              if (i === 7) { ng.w = np.x - ng.x; ng.h = np.y - ng.y; }
-              onAnnotationUpdate(ann.id, { geometry: ng });
+              setLiveGeometry((prev) => ({ ...prev, [ann.id]: computeBBoxHandleGeom(g, i, np) }));
+            }}
+            onDragEnd={(e) => {
+              const np = toNorm(e.target.x(), e.target.y());
+              const finalGeom = normalizeBBox(computeBBoxHandleGeom(g, i, np));
+              setLiveGeometry((prev) => { const { [ann.id]: _, ...rest } = prev; return rest; });
+              onAnnotationUpdate(ann.id, { geometry: finalGeom });
             }} />
         ))}
       </Group>
@@ -316,7 +341,7 @@ export const AnnotationCanvas: React.FC<Props> = ({
 
   // ── Render polygon ────────────────────────────────────────────────────────
   const renderPolygon = (ann: Annotation) => {
-    const g = ann.geometry as PolygonGeometry;
+    const g = (liveGeometry[ann.id] ?? ann.geometry) as PolygonGeometry;
     const lc = labelById(ann.label_class_id);
     const color = lc?.color || '#EF9F27';
     const isSelected = ann.id === selectedAnnotationId;
@@ -340,6 +365,13 @@ export const AnnotationCanvas: React.FC<Props> = ({
                 const np = toNorm(e.target.x(), e.target.y());
                 const newPts = [...g.points];
                 newPts[i] = [np.x, np.y];
+                setLiveGeometry((prev) => ({ ...prev, [ann.id]: { points: newPts } }));
+              }}
+              onDragEnd={(e) => {
+                const np = toNorm(e.target.x(), e.target.y());
+                const newPts = [...g.points];
+                newPts[i] = [np.x, np.y];
+                setLiveGeometry((prev) => { const { [ann.id]: _, ...rest } = prev; return rest; });
                 onAnnotationUpdate(ann.id, { geometry: { points: newPts } });
               }} />
           );
@@ -350,7 +382,7 @@ export const AnnotationCanvas: React.FC<Props> = ({
 
   // ── Render keypoint ───────────────────────────────────────────────────────
   const renderKeypoint = (ann: Annotation) => {
-    const geom = ann.geometry as any;
+    const geom = (liveGeometry[ann.id] ?? ann.geometry) as any;
     const pts = geom.points || [];
     const lc = labelById(ann.label_class_id);
     const color = lc?.color || '#EF9F27';
@@ -366,6 +398,13 @@ export const AnnotationCanvas: React.FC<Props> = ({
                 const np = toNorm(e.target.x(), e.target.y());
                 const newPts = [...pts];
                 newPts[i] = { ...p, x: np.x, y: np.y };
+                setLiveGeometry((prev) => ({ ...prev, [ann.id]: { points: newPts } }));
+              }}
+              onDragEnd={(e) => {
+                const np = toNorm(e.target.x(), e.target.y());
+                const newPts = [...pts];
+                newPts[i] = { ...p, x: np.x, y: np.y };
+                setLiveGeometry((prev) => { const { [ann.id]: _, ...rest } = prev; return rest; });
                 onAnnotationUpdate(ann.id, { geometry: { points: newPts } });
               }} />
           );
