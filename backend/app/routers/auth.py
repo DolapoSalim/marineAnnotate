@@ -162,8 +162,8 @@ async def login(
     user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
-    access_token = create_access_token(str(user.id))
-    refresh_token = create_refresh_token(str(user.id))
+    access_token = create_access_token(str(user.id), user.token_version)
+    refresh_token = create_refresh_token(str(user.id), user.token_version)
 
     response.set_cookie(
         key="refresh_token",
@@ -190,7 +190,7 @@ async def refresh_access_token(
     if not refresh_token:
         raise HTTPException(status_code=401, detail="No refresh token")
 
-    user_id, old_jti = await get_current_user_id_from_refresh(refresh_token)
+    user_id, old_jti = await get_current_user_id_from_refresh(refresh_token, db)
 
     try:
         from app.core.redis import redis_client
@@ -206,8 +206,8 @@ async def refresh_access_token(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or disabled")
 
-    new_access = create_access_token(str(user_id))
-    new_refresh = create_refresh_token(str(user_id))
+    new_access = create_access_token(str(user_id), user.token_version)
+    new_refresh = create_refresh_token(str(user_id), user.token_version)
 
     response.set_cookie(
         key="refresh_token",
@@ -227,11 +227,12 @@ async def refresh_access_token(
 async def logout(
     response: Response,
     user_id: CurrentUserID,
+    db: DbDep,
     refresh_token: str | None = Cookie(default=None),
 ) -> None:
     if refresh_token:
         try:
-            _, jti = await get_current_user_id_from_refresh(refresh_token)
+            _, jti = await get_current_user_id_from_refresh(refresh_token, db)
             from app.core.redis import redis_client
             await redis_client.setex(
                 f"revoked:{jti}",
@@ -286,6 +287,11 @@ async def reset_password(payload: ResetPasswordRequest, db: DbDep) -> dict:
         raise HTTPException(status_code=404, detail="Account no longer exists")
 
     user.hashed_password = hash_password(payload.new_password)
+    # Every access/refresh token issued before this moment carries the old
+    # token_version and stops working immediately — a password reset is
+    # supposed to mean "kick out anyone who had the old password," not just
+    # "change the password and hope."
+    user.token_version += 1
     await db.commit()
     await _delete_reset_token(payload.token)
     await _clear_failed_attempts(user.email)

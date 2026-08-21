@@ -6,8 +6,10 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import get_db
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
@@ -21,19 +23,25 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, token_version: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
-    payload = {"sub": subject, "exp": expire, "jti": uuid4().hex, "type": "access"}
+    payload = {
+        "sub": subject, "exp": expire, "jti": uuid4().hex,
+        "type": "access", "ver": token_version,
+    }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str, token_version: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
-    payload = {"sub": subject, "exp": expire, "jti": uuid4().hex, "type": "refresh"}
+    payload = {
+        "sub": subject, "exp": expire, "jti": uuid4().hex,
+        "type": "refresh", "ver": token_version,
+    }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
@@ -56,7 +64,30 @@ def _decode_jwt(token: str) -> dict:
         raise credentials_exception
 
 
-async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> int:
+async def _check_user_live(user_id: int, token_version: int, db: AsyncSession) -> None:
+    """
+    Shared check for both access and refresh tokens: the account must still
+    exist, be active, and the token must have been issued after the user's
+    last password reset (token_version match). Without this, deactivating a
+    user or resetting their password doesn't actually stop an
+    already-issued token from working until it naturally expires.
+    """
+    from app.models import User  # local import avoids a circular import at module load
+
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Account is disabled")
+    if user.token_version != token_version:
+        raise HTTPException(
+            status_code=401,
+            detail="Session has been invalidated — please sign in again",
+        )
+
+
+async def get_current_user_id(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> int:
     """Dependency for all protected routes — validates access token."""
     payload = _decode_jwt(token)
     # Accept both typed tokens and legacy tokens without type field
@@ -85,19 +116,25 @@ async def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> 
         except Exception:
             pass  # Redis unavailable — allow request through
 
+    await _check_user_live(user_id, payload.get("ver", 0), db)
     return user_id
 
 
-async def get_current_user_id_from_refresh(token: str) -> tuple[int, str]:
+async def get_current_user_id_from_refresh(
+    token: str, db: AsyncSession
+) -> tuple[int, str]:
     """Validate a refresh token — used only by /auth/refresh endpoint."""
     payload = _decode_jwt(token)
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid token type")
     jti = payload.get("jti", "")
     try:
-        return int(payload["sub"]), jti
+        user_id = int(payload["sub"])
     except (KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token subject")
+
+    await _check_user_live(user_id, payload.get("ver", 0), db)
+    return user_id, jti
 
 
 CurrentUserID = Annotated[int, Depends(get_current_user_id)]

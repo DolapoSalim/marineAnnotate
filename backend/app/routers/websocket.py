@@ -42,7 +42,8 @@ async def websocket_endpoint(websocket: WebSocket, project_id: int) -> None:
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=WS_AUTH_TIMEOUT)
         auth = json.loads(raw)
-        user_id = await get_current_user_id(auth.get("token", ""))  # type: ignore[arg-type]
+        async with AsyncSessionLocal() as auth_db:
+            user_id = await get_current_user_id(auth.get("token", ""), auth_db)  # type: ignore[arg-type]
     except Exception:
         await websocket.close(code=4001)
         return
