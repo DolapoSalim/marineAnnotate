@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import CurrentUserID
 from app.models import (
     Annotation, AnnotationStatus, AnnotationType,
@@ -106,6 +107,11 @@ def _add_image(zf, img, arcname):
 async def export_annotations(
     payload: ExportRequest, user_id: CurrentUserID, db: DbDep
 ) -> StreamingResponse:
+    # Building the zip currently buffers everything in memory (see _yolo/_coco/etc
+    # below) — repeated large exports back-to-back is a real memory-exhaustion
+    # risk, not just abuse from outsiders.
+    await enforce_rate_limit(f"ratelimit:export:{user_id}", max_calls=10, window_seconds=300)
+
     batch, images, labels, annotations = await _load_batch_data(
         db, payload.batch_id, user_id, payload.include_ai_suggestions
     )
