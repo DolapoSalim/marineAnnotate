@@ -67,7 +67,9 @@ Images and models persist in `./storage/` on the host.
 
 ## API Docs
 
-Auto-generated OpenAPI docs available at **http://localhost:8000/docs** when the backend is running.
+Auto-generated OpenAPI docs available at **http://localhost:8000/docs** — only when `DEBUG=true` in
+`backend/.env` (disabled by default, since exposing them is a minor information leak on a real
+deployment). Set `DEBUG=true` locally if you want to browse them.
 
 ---
 
@@ -152,3 +154,26 @@ marineAnnotate/
 | **Admin** | Everything + create/manage users |
 | **Reviewer** | Annotate + approve/reject annotations |
 | **Annotator** | Annotate images in assigned projects |
+
+---
+
+## Data & Privacy
+
+MarineAnnotate is self-hosted — everything below lives on **your own server**, under **your own
+control**. Nothing is sent to the project's maintainers or any third party.
+
+**Personal data stored about your team:**
+
+- Name, email address, and role for each user account
+- Login timestamps (`last_login`)
+- Who created/edited/reviewed each annotation, and a full edit history per annotation
+
+**Where it lives:** the Postgres database and the `storage/` directory on whichever machine you
+deploy this to. If you configure SMTP for invite/reset emails, those emails (containing a name and
+email address) pass through whatever mail server you point `SMTP_HOST` at.
+
+**Your responsibility as the operator:** if your team includes people in the EU/UK, running this
+app for them makes your lab a data controller under GDPR for the account data above — you're the
+one who decides how long it's retained and who can delete it (an admin can deactivate an account
+via the Admin console; there's no self-service "delete my account" flow yet). See
+[SECURITY.md](SECURITY.md) for hardening a deployment beyond `localhost`.
