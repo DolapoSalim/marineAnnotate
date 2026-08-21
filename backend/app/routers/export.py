@@ -146,7 +146,10 @@ def _yolo(batch, images, labels, annotations, split_map, include_images):
         missing = []
         for img in images:
             split = split_map.get(img.id, "train")
-            stem = Path(img.filename).stem
+            # Prefix with the DB id — two images can share a filename (e.g. two
+            # "DSC_0001.jpg" from different dives) and would otherwise silently
+            # overwrite each other's label file in the zip.
+            stem = f"{img.id}_{Path(img.filename).stem}"
             ext = Path(img.filename).suffix or ".jpg"
 
             lines = []
@@ -191,7 +194,7 @@ def _yolo_seg(batch, images, labels, annotations, split_map, include_images):
         missing = []
         for img in images:
             split = split_map.get(img.id, "train")
-            stem = Path(img.filename).stem
+            stem = f"{img.id}_{Path(img.filename).stem}"
             ext = Path(img.filename).suffix or ".jpg"
             lines = []
             for ann in annotations.get(img.id, []):
@@ -236,9 +239,12 @@ def _coco(batch, images, labels, annotations, include_images):
         missing = []
         for img in images:
             W, H = max(img.width, 1), max(img.height, 1)
-            coco["images"].append({"id": img.id, "file_name": img.filename, "width": W, "height": H})
+            # Prefix with the DB id so two images sharing a filename don't
+            # collide in the zip — file_name below must match the actual path.
+            safe_name = f"{img.id}_{img.filename}"
+            coco["images"].append({"id": img.id, "file_name": safe_name, "width": W, "height": H})
             if include_images:
-                ok = _add_image(zf, img, f"images/{img.filename}")
+                ok = _add_image(zf, img, f"images/{safe_name}")
                 if not ok:
                     missing.append(img.filename)
             for ann in annotations.get(img.id, []):
@@ -289,8 +295,10 @@ def _voc(images, labels, annotations, include_images):
         missing = []
         for img in images:
             W, H = max(img.width, 1), max(img.height, 1)
+            safe_name = f"{img.id}_{img.filename}"
+            safe_stem = f"{img.id}_{Path(img.filename).stem}"
             root = Element("annotation")
-            SubElement(root, "filename").text = img.filename
+            SubElement(root, "filename").text = safe_name
             size = SubElement(root, "size")
             SubElement(size, "width").text = str(W)
             SubElement(size, "height").text = str(H)
@@ -307,9 +315,9 @@ def _voc(images, labels, annotations, include_images):
                 SubElement(bb, "ymin").text = str(max(0, int(g["y"]*H)))
                 SubElement(bb, "xmax").text = str(min(W, int((g["x"]+g["w"])*W)))
                 SubElement(bb, "ymax").text = str(min(H, int((g["y"]+g["h"])*H)))
-            zf.writestr(f"annotations/{Path(img.filename).stem}.xml", tostring(root, encoding="unicode"))
+            zf.writestr(f"annotations/{safe_stem}.xml", tostring(root, encoding="unicode"))
             if include_images:
-                ok = _add_image(zf, img, f"images/{img.filename}")
+                ok = _add_image(zf, img, f"images/{safe_name}")
                 if not ok:
                     missing.append(img.filename)
         if missing:
@@ -358,7 +366,9 @@ def _csv(images, labels, annotations, include_images):
         zf.writestr("annotations.csv", csv_buf.getvalue().encode("utf-8-sig"))
         missing = []
         for img in images:
-            ok = _add_image(zf, img, f"images/{img.filename}")
+            # image_id in the CSV disambiguates rows already, but the zip path
+            # itself still needs a unique name to avoid same-filename collisions.
+            ok = _add_image(zf, img, f"images/{img.id}_{img.filename}")
             if not ok:
                 missing.append(img.filename)
         if missing:

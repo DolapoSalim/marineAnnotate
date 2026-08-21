@@ -100,7 +100,11 @@ export const AnnotationPage: React.FC = () => {
     if (!currentImage) return;
     annotationsApi.list(currentImage.id).then((r) => {
       setAnnotations(r.data);
-      setShowAIPanel(false);
+      // Only close the panel once every AI suggestion has actually been
+      // reviewed — a partial submit leaves some pending, and hiding the
+      // panel then would make them invisible (not deleted, just unreachable).
+      const stillPending = r.data.some((a: Annotation) => a.status === 'ai_suggestion');
+      setShowAIPanel(stillPending);
     });
   }, [currentImage?.id]);
 

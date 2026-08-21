@@ -65,6 +65,20 @@ async def _clear_failed_attempts(email: str) -> None:
         pass
 
 
+async def _clear_ip_rate_limit(request: Request) -> None:
+    """
+    A successful login shouldn't count against the shared-IP flood counter —
+    otherwise a handful of people logging in correctly from the same office/lab
+    network can lock everyone else out for 15 minutes.
+    """
+    try:
+        from app.core.redis import redis_client
+        ip = request.client.host if request.client else "unknown"
+        await redis_client.delete(f"login_attempts:{ip}")
+    except Exception:
+        pass
+
+
 def _is_secure(request: Request) -> bool:
     """Detect real scheme even behind nginx (via X-Forwarded-Proto)."""
     forwarded = request.headers.get("x-forwarded-proto", "")
@@ -101,6 +115,7 @@ async def login(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
     await _clear_failed_attempts(email)
+    await _clear_ip_rate_limit(request)
     user.last_login = datetime.now(timezone.utc)
     await db.commit()
 
@@ -114,7 +129,9 @@ async def login(
         secure=_is_secure(request),
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/api/auth/refresh",
+        # Scoped to /api/auth (not just /api/auth/refresh) so the browser also
+        # sends it to /api/auth/logout — otherwise logout can never revoke it.
+        path="/api/auth",
     )
 
     return Token(access_token=access_token)
@@ -156,7 +173,9 @@ async def refresh_access_token(
         secure=_is_secure(request),
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/api/auth/refresh",
+        # Scoped to /api/auth (not just /api/auth/refresh) so the browser also
+        # sends it to /api/auth/logout — otherwise logout can never revoke it.
+        path="/api/auth",
     )
     return Token(access_token=new_access)
 
@@ -178,7 +197,7 @@ async def logout(
             )
         except Exception:
             pass
-    response.delete_cookie("refresh_token", path="/api/auth/refresh")
+    response.delete_cookie("refresh_token", path="/api/auth")
 
 
 @router.get("/me", response_model=UserResponse)

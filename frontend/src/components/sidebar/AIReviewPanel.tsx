@@ -39,13 +39,17 @@ export const AIReviewPanel: React.FC<Props> = ({
   const pendingCount = aiSuggestions.filter((a) => !reviews[a.id]?.action).length;
 
   const handleSubmit = async () => {
+    // Only submit predictions the user actually made a decision on — an
+    // unreviewed suggestion must NOT be silently rejected, it should stay
+    // pending for later review.
+    const actions: AIReviewAction[] = aiSuggestions
+      .filter((ann) => reviews[ann.id]?.action)
+      .map((ann) => ({ annotation_id: ann.id, action: reviews[ann.id]!.action! }));
+
+    if (actions.length === 0) return;
+
     setSaving(true);
     try {
-      const actions: AIReviewAction[] = aiSuggestions.map((ann) => {
-        const rev = reviews[ann.id];
-        if (!rev?.action) return { annotation_id: ann.id, action: 'reject' };
-        return { annotation_id: ann.id, action: rev.action };
-      });
       await annotationsApi.review(imageId, actions);
       onReviewComplete();
     } catch (err) {
@@ -211,15 +215,20 @@ export const AIReviewPanel: React.FC<Props> = ({
         </button>
         <button
           onClick={handleSubmit}
-          disabled={saving}
+          disabled={saving || pendingCount === aiSuggestions.length}
           style={{
-            padding: '9px', borderRadius: 8, cursor: saving ? 'not-allowed' : 'pointer',
+            padding: '9px', borderRadius: 8,
+            cursor: saving || pendingCount === aiSuggestions.length ? 'not-allowed' : 'pointer',
             fontSize: 13, fontWeight: 500,
             border: 'none', background: '#1D9E75', color: '#fff',
-            opacity: saving ? 0.7 : 1,
+            opacity: saving || pendingCount === aiSuggestions.length ? 0.5 : 1,
           }}
         >
-          {saving ? 'Saving…' : `Submit review (${aiSuggestions.length})`}
+          {saving
+            ? 'Saving…'
+            : pendingCount > 0
+              ? `Submit reviewed (${aiSuggestions.length - pendingCount}) · ${pendingCount} left`
+              : `Submit review (${aiSuggestions.length})`}
         </button>
       </div>
     </div>

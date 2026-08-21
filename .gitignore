@@ -3,7 +3,7 @@
 # =========================
 .env
 .env.*
-!env.example
+!.env.example
 
 # =========================
 # PYTHON (Backend)
@@ -18,7 +18,6 @@ __pycache__/
 .venv/
 venv/
 env/
-*.example
 *.egg-info/
 dist/
 build/

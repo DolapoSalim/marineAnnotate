@@ -203,13 +203,14 @@ async def delete_annotation(db: AsyncSession, annotation: Annotation) -> None:
 
 async def bulk_review_ai_suggestions(
     db: AsyncSession,
+    image_id: int,
     reviews: list[dict],
     reviewer_id: int,
 ) -> list[Annotation]:
     updated = []
     for review in reviews:
         ann = await db.get(Annotation, review["annotation_id"])
-        if ann is None:
+        if ann is None or ann.image_id != image_id:
             continue
 
         history = AnnotationHistory(

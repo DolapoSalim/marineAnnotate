@@ -29,6 +29,8 @@ export const ImageGalleryPage: React.FC = () => {
   const [selected, setSelected] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AnnotationImage | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSkipped, setUploadSkipped] = useState<{ filename: string; reason: string }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,10 +50,21 @@ export const ImageGalleryPage: React.FC = () => {
   const handleUpload = async (files: FileList) => {
     setUploading(true);
     setUploadProgress(0);
-    await imagesApi.upload(bid, Array.from(files), setUploadProgress);
-    const res = await imagesApi.list(bid, 0, 200);
-    setImages(res.data);
-    setUploading(false);
+    setUploadError(null);
+    setUploadSkipped([]);
+    try {
+      const res = await imagesApi.upload(bid, Array.from(files), setUploadProgress);
+      if (res.data.skipped?.length) setUploadSkipped(res.data.skipped);
+      const listRes = await imagesApi.list(bid, 0, 200);
+      setImages(listRes.data);
+    } catch (err: any) {
+      const msg = err.response?.status === 413
+        ? 'Upload too large — try uploading fewer images at once.'
+        : err.response?.data?.detail || err.message || 'Upload failed — please try again.';
+      setUploadError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setUploading(false);
+    }
   };
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -158,6 +171,21 @@ export const ImageGalleryPage: React.FC = () => {
             <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
               <div style={{ height: '100%', background: '#1D9E75', width: `${uploadProgress}%`, borderRadius: 2, transition: 'width 0.2s' }} />
             </div>
+          </div>
+        )}
+
+        {uploadError && (
+          <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(226,75,74,0.1)', border: '0.5px solid rgba(226,75,74,0.3)', borderRadius: 8, fontSize: 13, color: '#f87171' }}>
+            {uploadError}
+          </div>
+        )}
+
+        {uploadSkipped.length > 0 && (
+          <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(239,159,39,0.08)', border: '0.5px solid rgba(239,159,39,0.25)', borderRadius: 8, fontSize: 13, color: '#EF9F27' }}>
+            <div style={{ fontWeight: 500, marginBottom: 4 }}>{uploadSkipped.length} file{uploadSkipped.length > 1 ? 's' : ''} skipped:</div>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(255,255,255,0.6)' }}>
+              {uploadSkipped.map((s, i) => <li key={i}>{s.filename} — {s.reason}</li>)}
+            </ul>
           </div>
         )}
 

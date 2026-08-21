@@ -51,7 +51,9 @@ export const ExportModal: React.FC<Props> = ({ batchId, batchName, onClose }) =>
       const ext = format === 'csv' && !includeImages ? 'csv' : 'zip';
       a.download = `${batchName.replace(/\s+/g, '_')}_${format}.${ext}`;
       a.click();
-      URL.revokeObjectURL(url);
+      // Revoking immediately can cancel the download in Firefox — the browser
+      // needs a moment to actually start reading the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
       setDone(true);
       setTimeout(onClose, 1800);
     } catch (err: any) {
@@ -113,8 +115,11 @@ export const ExportModal: React.FC<Props> = ({ batchId, batchName, onClose }) =>
           </label>
         </div>
 
-        {/* Train / Val / Test split — YOLO only */}
-        {hasThreeSplit && includeImages && (
+        {/* Train / Val / Test split — YOLO only. Shown regardless of "bundle images":
+            the split still determines the labels/train|val|test folder layout even
+            when only label files are exported, and hiding it here previously left
+            the user stuck if their split total wasn't 100%. */}
+        {hasThreeSplit && (
           <div style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.03)', border: '0.5px solid rgba(255,255,255,0.08)', borderRadius: 8, marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Dataset split</div>
             {[
