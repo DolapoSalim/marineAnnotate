@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, FolderOpen, Users, Image, LogOut, Shield } from 'lucide-react';
 import { projectsApi } from '../api';
@@ -12,6 +12,11 @@ export const DashboardPage: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [creating, setCreating] = useState(false);
+  // A ref guard, not just state — two clicks arriving in the same tick would
+  // both still read stale (pre-render) `creating` state and both slip through,
+  // firing two POSTs and creating the project twice.
+  const creatingRef = useRef(false);
   const { user, clearAuth } = useAuthStore();
   const navigate = useNavigate();
 
@@ -20,11 +25,18 @@ export const DashboardPage: React.FC = () => {
   }, []);
 
   const createProject = async () => {
-    if (!newName.trim()) return;
-    const res = await projectsApi.create({ name: newName, description: newDesc });
-    setProjects((p) => [res.data, ...p]);
-    setShowCreate(false);
-    setNewName(''); setNewDesc('');
+    if (!newName.trim() || creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
+    try {
+      const res = await projectsApi.create({ name: newName, description: newDesc });
+      setProjects((p) => [res.data, ...p]);
+      setShowCreate(false);
+      setNewName(''); setNewDesc('');
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
   };
 
   return (
@@ -83,8 +95,10 @@ export const DashboardPage: React.FC = () => {
                 style={{ ...inputStyle, resize: 'vertical', marginTop: 10 }}
               />
               <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-                <button onClick={() => setShowCreate(false)} style={cancelBtn}>Cancel</button>
-                <button onClick={createProject} style={primaryBtn}>Create</button>
+                <button onClick={() => setShowCreate(false)} style={cancelBtn} disabled={creating}>Cancel</button>
+                <button onClick={createProject} style={{ ...primaryBtn, opacity: creating ? 0.6 : 1 }} disabled={creating}>
+                  {creating ? 'Creating…' : 'Create'}
+                </button>
               </div>
             </div>
           </div>

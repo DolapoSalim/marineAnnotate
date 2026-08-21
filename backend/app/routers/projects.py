@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,7 +12,7 @@ from app.crud import (
     get_project_members, list_label_classes, list_user_projects,
     update_project, create_label_class, create_batch, list_batches,
 )
-from app.models import Image, ImageBatch, ProjectMember, ProjectRole
+from app.models import Image, ImageBatch, MLModel, ProjectMember, ProjectRole
 from app.schemas import (
     ImageBatchCreate, ImageBatchResponse, LabelClassCreate,
     LabelClassResponse, ProjectCreate, ProjectMemberAdd,
@@ -76,6 +77,40 @@ async def update_project_detail(
         raise HTTPException(status_code=403, detail="Owner access required")
     project = await get_project(db, project_id)
     return await update_project(db, project, payload)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project_detail(project_id: int, user_id: CurrentUserID, db: DbDep) -> None:
+    member = await check_project_access(project_id, user_id, db)
+    if member.role not in (ProjectRole.OWNER,):
+        raise HTTPException(status_code=403, detail="Owner access required")
+    project = await get_project(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Best-effort cleanup of files on disk — the DB rows (batches, images,
+    # annotations, models, jobs) cascade automatically via the ORM/FK
+    # relationships below, but nothing removes the actual files they point to.
+    batch_ids = list(await db.scalars(select(ImageBatch.id).where(ImageBatch.project_id == project_id)))
+    if batch_ids:
+        images = await db.execute(select(Image).where(Image.batch_id.in_(batch_ids)))
+        for img in images.scalars().all():
+            try:
+                Path(img.storage_path).unlink(missing_ok=True)
+                if img.thumbnail_path:
+                    Path(img.thumbnail_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    models_result = await db.execute(select(MLModel).where(MLModel.project_id == project_id))
+    for m in models_result.scalars().all():
+        try:
+            Path(m.model_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    await db.delete(project)
+    await db.commit()
 
 
 # Members
