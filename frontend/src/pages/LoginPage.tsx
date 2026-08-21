@@ -206,12 +206,17 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div>
-              <label style={{
-                display: 'block', fontSize: 13, fontWeight: 500,
-                color: 'rgba(255,255,255,0.6)', marginBottom: 7,
-              }}>
-                Password
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 7 }}>
+                <label style={{ fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.6)' }}>
+                  Password
+                </label>
+                <span
+                  onClick={() => navigate('/forgot-password')}
+                  style={{ fontSize: 12, color: '#1D9E75', cursor: 'pointer' }}
+                >
+                  Forgot password?
+                </span>
+              </div>
               <input
                 type="password" value={password}
                 onChange={e => setPassword(e.target.value)}
