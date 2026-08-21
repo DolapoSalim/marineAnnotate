@@ -80,6 +80,11 @@ class User(Base):
     avatar_color: Mapped[str] = mapped_column(String(7), default="#1D9E75")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Bumped whenever every existing session for this user should stop working
+    # (password reset, forced logout) — embedded in each JWT as "ver" and
+    # checked on every request, so a stolen token dies immediately instead of
+    # surviving until its natural expiry.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     memberships: Mapped[list[ProjectMember]] = relationship(back_populates="user")
     # IMPORTANT: Annotation has TWO foreign keys to users (created_by, reviewed_by).
