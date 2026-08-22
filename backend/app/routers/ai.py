@@ -171,4 +171,11 @@ async def get_job_status(project_id: int, job_id: int, user_id: CurrentUserID, d
     job = await get_ai_job(db, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    # Being a member of *a* project isn't enough — job_id is a separate,
+    # guessable/enumerable identifier, so without this check any project
+    # member could read any OTHER project's job status, error messages, and
+    # result_summary (which includes image filenames) just by trying IDs.
+    batch = await db.get(ImageBatch, job.batch_id)
+    if not batch or batch.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Job not found")
     return job

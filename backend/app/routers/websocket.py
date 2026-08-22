@@ -9,6 +9,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
+from app.core.rate_limit import is_rate_limited
 from app.core.security import get_current_user_id
 from app.models import ProjectMember
 from app.services.websocket import manager
@@ -16,6 +17,8 @@ from app.services.websocket import manager
 router = APIRouter(tags=["websocket"])
 
 WS_AUTH_TIMEOUT = 5.0  # seconds to send auth message before disconnect
+WS_MSG_LIMIT = 120  # per connection
+WS_MSG_WINDOW_SECONDS = 10
 
 
 async def _is_project_member(project_id: int, user_id: int) -> bool:
@@ -65,6 +68,16 @@ async def websocket_endpoint(websocket: WebSocket, project_id: int) -> None:
         # Step 3 — Main message loop
         while True:
             raw = await websocket.receive_text()
+            # A single connection flooding messages fans out to every other
+            # project member's socket AND can trigger their browsers to
+            # re-fetch from the REST API on each one (see AnnotationPage's
+            # WS handler) — an amplification DoS without this cap. Closing
+            # rather than silently dropping makes a flooding client actually
+            # stop rather than keep burning server CPU on every message.
+            if await is_rate_limited(f"ws:msg:{user_id}", WS_MSG_LIMIT, WS_MSG_WINDOW_SECONDS):
+                await websocket.close(code=4029)
+                manager.disconnect(project_id, user_id)
+                return
             try:
                 msg = json.loads(raw)
                 msg["user_id"] = user_id
