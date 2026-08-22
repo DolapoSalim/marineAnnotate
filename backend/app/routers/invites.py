@@ -5,9 +5,11 @@ Tokens stored in Redis so they survive backend restarts.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -65,6 +67,24 @@ class InviteAccept(BaseModel):
     full_name: str
 
 
+def _is_local_app_url() -> bool:
+    """
+    True if APP_URL points at this machine only (localhost/loopback) or a
+    private-network address — an invite link built from either will only
+    work for someone on this exact machine or LAN, never a remote
+    collaborator. Surfaced to the admin so a misconfigured APP_URL is
+    visible before an invite goes out, not discovered when the recipient
+    reports the link doesn't work.
+    """
+    host = urlparse(settings.APP_URL).hostname or ""
+    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
 async def _require_admin(user_id: int, db: AsyncSession):
     user = await get_user(db, user_id)
     if not user or user.role != UserRole.ADMIN:
@@ -103,7 +123,11 @@ async def send_invite(
     return {
         "message": "Invite sent" if sent else "Invite created (check server logs for link)",
         "email": payload.email,
-        "invite_url": invite_url if settings.DEBUG else None,
+        # Shown to the admin who just sent it, not the invitee — this is
+        # confirmation of their own action, not a leak. Always included
+        # (not just in DEBUG) so a wrong APP_URL is visible immediately.
+        "invite_url": invite_url,
+        "app_url_is_local": _is_local_app_url(),
     }
 
 

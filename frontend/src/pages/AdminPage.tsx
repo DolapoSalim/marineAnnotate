@@ -24,7 +24,9 @@ export const AdminPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'annotator' as UserRole });
-  const [inviteStatus, setInviteStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [inviteStatus, setInviteStatus] = useState<{
+    type: 'success' | 'error'; msg: string; email?: string; inviteUrl?: string; isLocalUrl?: boolean;
+  } | null>(null);
   const [sending, setSending] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[] | null>(null);
@@ -42,8 +44,14 @@ export const AdminPage: React.FC = () => {
     if (!inviteForm.email || !inviteForm.full_name) return;
     setSending(true); setInviteStatus(null);
     try {
-      await api.post('/api/invites/send', inviteForm);
-      setInviteStatus({ type: 'success', msg: `Invite sent to ${inviteForm.email}` });
+      const res = await api.post('/api/invites/send', inviteForm);
+      setInviteStatus({
+        type: 'success',
+        msg: `Invite sent to ${inviteForm.email}`,
+        email: inviteForm.email,
+        inviteUrl: res.data.invite_url,
+        isLocalUrl: res.data.app_url_is_local,
+      });
       setInviteForm({ email: '', full_name: '', role: 'annotator' });
       setShowInvite(false);
     } catch (err: any) {
@@ -101,10 +109,33 @@ export const AdminPage: React.FC = () => {
             background: inviteStatus.type === 'success' ? 'rgba(29,158,117,0.15)' : 'rgba(226,75,74,0.15)',
             border: `0.5px solid ${inviteStatus.type === 'success' ? 'rgba(29,158,117,0.4)' : 'rgba(226,75,74,0.4)'}`,
             color: inviteStatus.type === 'success' ? '#1D9E75' : '#E24B4A',
-            display: 'flex', alignItems: 'center', gap: 8,
           }}>
-            {inviteStatus.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />} {inviteStatus.msg}
-            <button onClick={() => setInviteStatus(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, display: 'flex' }}><X size={14} /></button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {inviteStatus.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />} {inviteStatus.msg}
+              <button onClick={() => setInviteStatus(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.6, display: 'flex' }}><X size={14} /></button>
+            </div>
+
+            {inviteStatus.inviteUrl && (
+              <div style={{ marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.6)', wordBreak: 'break-all' }}>
+                Link sent: <span style={{ color: '#e8edf2' }}>{inviteStatus.inviteUrl}</span>
+              </div>
+            )}
+
+            {inviteStatus.isLocalUrl && (
+              <div style={{
+                marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12,
+                color: '#EF9F27', background: 'rgba(239,159,39,0.1)', border: '0.5px solid rgba(239,159,39,0.3)',
+                borderRadius: 8, padding: '8px 10px',
+              }}>
+                <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  This link points to <strong>localhost/a private address</strong> — it will only work on this
+                  machine or your local network. If {inviteStatus.email || 'the invitee'} is elsewhere, update{' '}
+                  <code>APP_URL</code> in <code>backend/.env</code> to an address they can actually reach, then
+                  send a new invite.
+                </span>
+              </div>
+            )}
           </div>
         )}
 
