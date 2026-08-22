@@ -124,3 +124,20 @@ async def run_inference_job(job_id: int) -> None:
             job.error_message = str(e)
             await db.commit()
             raise
+
+
+from app.core.celery_app import celery_app  # noqa: E402
+
+
+@celery_app.task(name="run_inference_job")
+def run_inference_job_task(job_id: int) -> None:
+    """
+    Celery entry point. Celery task functions are called synchronously (one
+    per worker process/thread) — this just runs the async implementation
+    above to completion via its own fresh event loop. Kept as a thin wrapper
+    so run_inference_job itself stays plain async code, independently
+    testable without Celery in the loop.
+    """
+    import asyncio
+
+    asyncio.run(run_inference_job(job_id))

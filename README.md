@@ -194,7 +194,9 @@ marineAnnotate/
 2. **Export** as YOLO format and train your model externally (YOLOv9/v11)
 3. **Upload** the trained `.pt` model in Project → Models tab
 4. **Map** YOLO class IDs to your label classes (JSON mapping)
-5. **Run AI assist** on a batch — inference runs in the background
+5. **Run AI assist** on a batch — inference runs on a separate Celery worker (the `celery_worker`
+   service, started automatically with `docker compose up`), not inside the API process, so one
+   inference job no longer blocks the app for everyone else while it runs
 6. **Review** — each prediction shown with confidence; drag handles to correct, then accept/reject
 7. **Retrain** on the growing confirmed set to improve the model iteratively
 

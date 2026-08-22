@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from app.core.uploads import (
 from app.crud import create_ai_job, get_ai_job, list_ai_jobs, list_models
 from app.models import ImageBatch, MLModel, ProjectMember, UserRole
 from app.schemas import AIJobCreate, AIJobResponse, MLModelResponse
-from app.services.inference import run_inference_job
+from app.services.inference import run_inference_job_task
 
 router = APIRouter(prefix="/api/projects", tags=["ai"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -139,14 +139,14 @@ async def get_jobs(project_id: int, user_id: CurrentUserID, db: DbDep):
 async def create_job(
     project_id: int,
     payload: AIJobCreate,
-    background_tasks: BackgroundTasks,
     user_id: CurrentUserID,
     db: DbDep,
 ) -> AIJobResponse:
     await _check_access(project_id, user_id, db)
-    # Inference currently runs synchronously in-process (see services/inference.py) —
-    # one job blocks the whole API until it finishes, so queuing many back-to-back
-    # is a real self-inflicted DoS risk, not just abuse from outsiders.
+    # Inference runs on a separate Celery worker process (see
+    # services/inference.py + core/celery_app.py) — queuing several jobs
+    # back-to-back queues them for the worker instead of blocking the API,
+    # but the rate limit still guards against someone flooding the queue.
     await enforce_rate_limit(f"ratelimit:ai_job:{user_id}", max_calls=5, window_seconds=300)
 
     model = await db.get(MLModel, payload.model_id)
@@ -158,7 +158,10 @@ async def create_job(
         raise HTTPException(status_code=404, detail="Batch not found in this project")
 
     job = await create_ai_job(db, payload, user_id)
-    background_tasks.add_task(run_inference_job, job.id)
+    async_result = run_inference_job_task.delay(job.id)
+    job.celery_task_id = async_result.id
+    await db.commit()
+    await db.refresh(job)
     return job
 
 

@@ -1,8 +1,13 @@
 #!/bin/sh
 set -e
 
-echo "Running database migrations..."
-alembic upgrade head
+# The celery_worker service uses this same image/entrypoint but sets
+# RUN_MIGRATIONS=false — only one process should ever run migrations, and it
+# shouldn't be a race between whichever of backend/celery_worker starts first.
+if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+  echo "Running database migrations..."
+  alembic upgrade head
+fi
 
 # Normal container start (no override command): run the app.
 # Otherwise (e.g. `docker compose run backend alembic revision ...` for admin
