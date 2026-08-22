@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, CheckCircle, Clock, Eye, AlertCircle, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Upload, CheckCircle, Clock, Eye, AlertCircle, Trash2, AlertTriangle, ChevronDown } from 'lucide-react';
 import { ImageThumbnail } from '../components/ImageThumbnail';
 import { Logo } from '../components/ui/Logo';
 import { imagesApi, projectsApi } from '../api';
 import type { AnnotationImage, ImageBatch } from '../types';
+
+const PAGE_SIZE = 200;
 
 const STATUS_META = {
   pending:     { label: 'Pending',     color: '#6B7280', bg: 'rgba(107,114,128,0.15)', icon: Clock },
@@ -21,6 +23,8 @@ export const ImageGalleryPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [images, setImages] = useState<AnnotationImage[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [batch, setBatch] = useState<ImageBatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
@@ -33,19 +37,33 @@ export const ImageGalleryPage: React.FC = () => {
   const [uploadSkipped, setUploadSkipped] = useState<{ filename: string; reason: string }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const fetchImages = async (limit: number) => {
+    const res = await imagesApi.list(bid, 0, limit);
+    setImages(res.data);
+    setTotal(Number(res.headers['x-total-count'] ?? res.data.length));
+  };
+
   useEffect(() => {
     const load = async () => {
-      const [imgRes, batchesRes] = await Promise.all([
-        imagesApi.list(bid, 0, 200),
+      const [, batchesRes] = await Promise.all([
+        fetchImages(PAGE_SIZE),
         projectsApi.batches(pid),
       ]);
-      setImages(imgRes.data);
       const b = batchesRes.data.find((x: ImageBatch) => x.id === bid);
       setBatch(b || null);
       setLoading(false);
     };
     load();
   }, [bid, pid]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      await fetchImages(images.length + PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleUpload = async (files: FileList) => {
     setUploading(true);
@@ -55,8 +73,9 @@ export const ImageGalleryPage: React.FC = () => {
     try {
       const res = await imagesApi.upload(bid, Array.from(files), setUploadProgress);
       if (res.data.skipped?.length) setUploadSkipped(res.data.skipped);
-      const listRes = await imagesApi.list(bid, 0, 200);
-      setImages(listRes.data);
+      // Cover everything already loaded plus the newly uploaded files, so
+      // uploading more after already clicking "Load more" doesn't lose them.
+      await fetchImages(Math.max(images.length, PAGE_SIZE) + files.length);
     } catch (err: any) {
       const msg = err.response?.status === 413
         ? 'Upload too large — try uploading fewer images at once.'
@@ -91,6 +110,9 @@ export const ImageGalleryPage: React.FC = () => {
     ? images
     : images.filter(img => img.status === filter);
 
+  // Status breakdown can only reflect images actually loaded so far — with
+  // "Load more" pagination, that's not necessarily everything in the batch
+  // (see the "X of Y loaded" note next to the count below).
   const stats = {
     total: images.length,
     pending: images.filter(i => i.status === 'pending').length,
@@ -100,6 +122,7 @@ export const ImageGalleryPage: React.FC = () => {
   };
 
   const pct = stats.total > 0 ? Math.round((stats.annotated + stats.reviewed) / stats.total * 100) : 0;
+  const hasMore = images.length < total;
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a1220', color: '#e8edf2', fontFamily: "'DM Sans', sans-serif" }}>
@@ -117,7 +140,9 @@ export const ImageGalleryPage: React.FC = () => {
         <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)' }} />
         <div>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{batch?.name || 'Image Gallery'}</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{stats.total} images</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+            {hasMore ? `${stats.total} of ${total} images loaded` : `${stats.total} images`}
+          </div>
         </div>
         <div style={{ flex: 1 }} />
         <input ref={fileRef} type="file" multiple accept="image/*" style={{ display: 'none' }}
@@ -302,6 +327,23 @@ export const ImageGalleryPage: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Load more — batches can have far more than one page's worth of
+            images; without this, anything past the first page was
+            previously just invisible and unreachable. */}
+        {!loading && hasMore && (
+          <div style={{ textAlign: 'center', marginTop: 20 }}>
+            <button onClick={loadMore} disabled={loadingMore} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 20px',
+              borderRadius: 8, border: '0.5px solid rgba(255,255,255,0.15)',
+              background: 'rgba(255,255,255,0.05)', color: '#e8edf2', fontSize: 13,
+              cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1,
+            }}>
+              <ChevronDown size={14} />
+              {loadingMore ? 'Loading…' : `Load more (${total - images.length} remaining)`}
+            </button>
           </div>
         )}
       </div>

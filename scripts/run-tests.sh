@@ -6,10 +6,13 @@
 # env with those packages available.
 set -eu
 
-cd "$(dirname "$0")/.."
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
 docker compose -f docker-compose.test.yml up -d
-cleanup() { docker compose -f docker-compose.test.yml down; }
+# Absolute path — by the time this fires, cwd has moved to backend/ below, so
+# a relative path here would resolve to the wrong (nonexistent) file.
+cleanup() { docker compose -f "$REPO_ROOT/docker-compose.test.yml" down; }
 trap cleanup EXIT
 
 echo "Waiting for test database..."
@@ -17,7 +20,7 @@ until docker compose -f docker-compose.test.yml exec -T test-db pg_isready -U te
   sleep 1
 done
 
-cd backend
+cd "$REPO_ROOT/backend"
 DATABASE_URL="postgresql+asyncpg://test:test@localhost:5433/marine_test" \
 REDIS_URL="redis://localhost:6380/0" \
 SECRET_KEY="test-only-secret-not-used-anywhere-real-0123456789" \

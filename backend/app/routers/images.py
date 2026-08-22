@@ -2,7 +2,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from PIL import Image as PILImage
 from sqlalchemy import select, func
@@ -43,11 +43,18 @@ async def _check_batch_access(batch_id: int, user_id: int, db: AsyncSession) -> 
 
 @router.get("/{batch_id}/images")
 async def list_batch_images(
-    batch_id: int, user_id: CurrentUserID, db: DbDep,
-    skip: int = 0, limit: int = 200,
+    batch_id: int, user_id: CurrentUserID, db: DbDep, response: Response,
+    skip: int = 0, limit: int = Query(200, le=500),
 ):
     await _check_batch_access(batch_id, user_id, db)
     images = await list_images(db, batch_id, skip=skip, limit=limit)
+    total = await db.scalar(select(func.count()).where(Image.batch_id == batch_id)) or 0
+    # Callers (gallery pagination, "load all images" in the annotation editor)
+    # need this to know whether more pages exist beyond the current one —
+    # without it, a batch with more images than one page's worth was
+    # previously just invisible past the cap, both in the gallery and in the
+    # annotation editor's prev/next navigation.
+    response.headers["X-Total-Count"] = str(total)
     result = []
     for img in images:
         count = await db.scalar(

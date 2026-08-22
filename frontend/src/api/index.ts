@@ -117,6 +117,28 @@ export const projectsApi = {
 export const imagesApi = {
   list: (batchId: number, skip = 0, limit = 200) =>
     api.get(`/api/batches/${batchId}/images`, { params: { skip, limit } }),
+  // Pages through every image in a batch — used where the whole list is
+  // needed at once (e.g. the annotation editor's prev/next navigation),
+  // unlike the gallery which pages incrementally via `list` + "Load more".
+  // Previously batches over 200 images silently lost anything past that —
+  // the annotation editor could never even navigate to image #201.
+  listAll: async (batchId: number, pageSize = 200) => {
+    const SAFETY_CAP = 20000; // stop runaway pagination rather than looping forever
+    let skip = 0;
+    let all: any[] = [];
+    for (;;) {
+      const res = await api.get(`/api/batches/${batchId}/images`, { params: { skip, limit: pageSize } });
+      all = all.concat(res.data);
+      const total = Number(res.headers['x-total-count'] ?? all.length);
+      skip += res.data.length;
+      if (res.data.length === 0 || all.length >= total) break;
+      if (skip >= SAFETY_CAP) {
+        console.warn(`imagesApi.listAll: stopped after ${all.length} of ${total} images (safety cap reached)`);
+        break;
+      }
+    }
+    return all;
+  },
   upload: (batchId: number, files: File[], onProgress?: (p: number) => void) => {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));

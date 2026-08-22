@@ -142,8 +142,11 @@ async def list_batches(db: AsyncSession, project_id: int) -> list[ImageBatch]:
 async def list_images(
     db: AsyncSession, batch_id: int, skip: int = 0, limit: int = 50
 ) -> list[Image]:
+    # ORDER BY is required for offset/limit to paginate consistently — without
+    # it Postgres doesn't guarantee row order across calls, so paging through
+    # "skip=200, skip=400, ..." could silently skip or repeat images.
     result = await db.execute(
-        select(Image).where(Image.batch_id == batch_id).offset(skip).limit(limit)
+        select(Image).where(Image.batch_id == batch_id).order_by(Image.id).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 

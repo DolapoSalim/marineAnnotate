@@ -35,11 +35,11 @@ export const AnnotationPage: React.FC = () => {
   // Load images + labels
   useEffect(() => {
     const load = async () => {
-      const [imgRes, labelRes] = await Promise.all([
-        imagesApi.list(bid),
+      const [allImages, labelRes] = await Promise.all([
+        imagesApi.listAll(bid),
         projectsApi.labels(pid),
       ]);
-      setImages(imgRes.data);
+      setImages(allImages);
       setLabels(labelRes.data);
       setLoading(false);
     };
