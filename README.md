@@ -18,6 +18,15 @@ In-house annotation platform for underwater marine imagery — seagrasses, macro
 
 ---
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Landing page](assets/landing-page.png) | ![Project batches](assets/project-detail.png) |
+| ![Image gallery](assets/image-gallery.png) | ![Annotation editor](assets/annotation-editor.png) |
+
+---
+
 ## Quick Start (Local Dev)
 
 ### Prerequisites
