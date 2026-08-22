@@ -1,0 +1,9 @@
+{$DOMAIN} {
+	# Caddy figures out the right certificate automatically:
+	# - a real public domain (e.g. lab.example.org) -> automatic Let's Encrypt,
+	#   renewed automatically, no config needed.
+	# - an IP address or "localhost" -> a locally-trusted self-signed
+	#   certificate instead, since public CAs can't issue for those. Browsers
+	#   will show a one-time warning until you trust Caddy's local root CA.
+	reverse_proxy frontend:80
+}

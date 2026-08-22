@@ -34,7 +34,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      # Bound to loopback only — reachable as localhost:8000 for local
+      # debugging, but not from the network. Caddy/frontend reach it via the
+      # internal compose network (service name), not this published port.
+      - "127.0.0.1:8000:8000"
     env_file:
       - ./backend/.env
     environment:
@@ -55,9 +58,37 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:80"
+      # Bound to loopback only — same reasoning as backend above. Direct,
+      # unencrypted access stays available at localhost:5173 for local dev,
+      # but the network-facing entrance is only ever Caddy (see the `tls`
+      # profile below), so there's no way to bypass HTTPS from outside.
+      - "127.0.0.1:5173:80"
     depends_on:
       - backend
 
+  # Optional TLS-terminating reverse proxy — the actual network-facing
+  # entrance for any deployment beyond a single local machine. Not started by
+  # default; enable with `docker compose --profile tls up -d --build`.
+  # Automatically gets a real Let's Encrypt certificate if DOMAIN is a public
+  # domain name pointed at this server, or a locally-trusted self-signed
+  # certificate if it's an IP/localhost (Caddy detects this automatically —
+  # see Caddyfile). See README's TLS section for the full setup.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
