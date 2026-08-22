@@ -142,7 +142,48 @@ on the server itself but not from anywhere else, and there's no way to accidenta
 
 If you're on an internal-only network and don't want to deal with certificates at all, a tunnel like
 [Tailscale](https://tailscale.com/) or a Cloudflare Tunnel is a reasonable alternative to the Caddy
-profile — see [SECURITY.md](SECURITY.md).
+profile — see [Remote Team Access](#remote-team-access) below.
+
+---
+
+## Remote Team Access
+
+TLS (above) covers *encryption*. It doesn't cover *reachability* — a lab member outside your local
+network still can't reach `https://your-server` unless something makes that address actually
+resolve to your machine from the internet. Where your team is decides what you need:
+
+- **Same machine, or same office/lab network** — nothing extra. Set `APP_URL` in `backend/.env` to
+  `http://localhost:5173` (same machine) or this server's LAN IP (same network), and invites work
+  as-is.
+- **Remote / different location** — you need one of the options below. Don't use router
+  port-forwarding for this on a personal/lab workstation: it exposes the machine directly to the
+  whole internet, and most ISPs' CGNAT makes it impossible anyway.
+
+**Cloudflare Tunnel** (built in, disabled by default) makes an *outbound* connection to Cloudflare —
+no router changes, works even behind CGNAT, and nothing needs installing on your lab member's end.
+
+```bash
+docker compose --profile tunnel up -d
+./scripts/get-tunnel-url.sh   # prints the address once it's up
+```
+
+- **No setup, right now**: the command above gets you a free, instant `*.trycloudflare.com` address.
+  Good enough to unblock a remote invite today — but Cloudflare gives it no uptime guarantee, and
+  **the address changes** if this container ever restarts.
+- **Stable, permanent address**: create a named tunnel in the [Cloudflare Zero Trust
+  dashboard](https://one.dash.cloudflare.com/) (free account + a domain you own), set `TUNNEL_TOKEN`
+  in the root `.env` to the token it gives you, then use the other profile instead:
+  `docker compose --profile tunnel-named up -d`.
+
+Either way, once you have the address: set it as `APP_URL` in `backend/.env`, then
+`docker compose up -d --force-recreate backend` so new invite links use it. The Admin Console warns
+you directly if `APP_URL` still points at `localhost`/a private address when you send an invite —
+see [Inviting Lab Members](#inviting-lab-members).
+
+**Alternative — [Tailscale](https://tailscale.com/):** every collaborator installs Tailscale and
+joins your private network. More setup per person than a tunnel, but nothing is ever exposed to the
+public internet at all — a better fit if remote access becomes a standing pattern with the same
+people, rather than one-off invites.
 
 ---
 

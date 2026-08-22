@@ -119,6 +119,42 @@ services:
     depends_on:
       - frontend
 
+  # Optional — lets a remote lab member reach this instance without any
+  # router/port-forwarding changes (works even behind ISP CGNAT, which makes
+  # port-forwarding impossible outright). Not started by default. Two modes,
+  # as separate profiles since the cloudflared image has no shell to branch
+  # on a token being set — see README's "Remote Team Access" section.
+  #
+  # Zero-config: docker compose --profile tunnel up -d
+  # Gets a free, instant *.trycloudflare.com address (find it with
+  # ./scripts/get-tunnel-url.sh after starting) — fine to unblock a remote
+  # invite today, but Cloudflare gives it no uptime guarantee and the
+  # address changes if this container ever restarts.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: ["tunnel", "--url", "http://frontend:80"]
+    depends_on:
+      - frontend
+    restart: on-failure
+
+  # Stable, permanent address: create a named tunnel in the Cloudflare Zero
+  # Trust dashboard (free account + a domain you own), set TUNNEL_TOKEN in
+  # the root .env to the token it gives you, then:
+  #   docker compose --profile tunnel-named up -d
+  cloudflared-named:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel-named"]
+    # Can't use the required-variable ${VAR:?...} syntax here — compose
+    # validates it file-wide even when this profile isn't the one active,
+    # which would break the plain `tunnel` profile above for anyone who
+    # hasn't set TUNNEL_TOKEN. An empty token fails at cloudflared itself
+    # with a clear error instead, only when this profile actually runs.
+    command: ["tunnel", "run", "--token", "${TUNNEL_TOKEN:-}"]
+    depends_on:
+      - frontend
+    restart: on-failure
+
 volumes:
   postgres_data:
   caddy_data:
