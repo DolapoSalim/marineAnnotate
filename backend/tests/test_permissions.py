@@ -1,4 +1,4 @@
-from app.models import AIJob, ImageBatch, JobStatus, JobType, MLModel, Project, ProjectMember, ProjectRole, UserRole
+from app.models import AIJob, Image, ImageBatch, JobStatus, JobType, MLModel, Project, ProjectMember, ProjectRole, UserRole
 from tests.conftest import ADMIN_PASSWORD, login, make_user
 
 
@@ -124,3 +124,39 @@ async def test_cannot_read_ai_job_from_a_different_project(client, db_session):
     r2 = await client.get(f"/api/projects/{project_a.id}/jobs/{job_a.id}",
                            headers={"Authorization": f"Bearer {owner_token}"})
     assert r2.status_code == 200
+
+
+async def test_cannot_assign_image_to_a_non_member(client, db_session):
+    owner = await make_user(db_session, "assign_owner@test.local", "OwnerPass123")
+    outsider = await make_user(db_session, "assign_outsider@test.local", "OutsiderPass123")
+
+    project = Project(name="Assign Project", created_by=owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(ProjectMember(project_id=project.id, user_id=owner.id, role=ProjectRole.OWNER))
+    batch = ImageBatch(project_id=project.id, name="batch")
+    db_session.add(batch)
+    await db_session.flush()
+    image = Image(batch_id=batch.id, filename="a.jpg", storage_path="/tmp/a.jpg", width=100, height=100)
+    db_session.add(image)
+    await db_session.commit()
+    await db_session.refresh(image)
+
+    token = await login(client, owner.email, "OwnerPass123")
+
+    # outsider is a real user, just not a member of this project
+    r = await client.patch(
+        f"/api/batches/{batch.id}/images/{image.id}/assign",
+        json={"user_id": outsider.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 400
+
+    # assigning to the owner (an actual member) still works
+    r2 = await client.patch(
+        f"/api/batches/{batch.id}/images/{image.id}/assign",
+        json={"user_id": owner.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["assigned_to"] == owner.id

@@ -162,11 +162,23 @@ async def get_image_detail(batch_id: int, image_id: int, user_id: CurrentUserID,
 
 @router.patch("/{batch_id}/images/{image_id}/assign")
 async def assign_image(batch_id: int, image_id: int, payload: dict, user_id: CurrentUserID, db: DbDep) -> dict:
-    await _check_batch_access(batch_id, user_id, db)
+    batch = await _check_batch_access(batch_id, user_id, db)
     img = await get_image(db, image_id)
     if not img or img.batch_id != batch_id:
         raise HTTPException(status_code=404, detail="Image not found")
-    img.assigned_to = payload.get("user_id")
+
+    target_user_id = payload.get("user_id")
+    if target_user_id is not None:
+        result = await db.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == batch.project_id,
+                ProjectMember.user_id == target_user_id,
+            )
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Can only assign to a member of this project")
+
+    img.assigned_to = target_user_id
     await db.commit()
     return {"assigned_to": img.assigned_to}
 
