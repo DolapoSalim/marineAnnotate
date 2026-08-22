@@ -5,6 +5,9 @@
 .env.*
 !.env.example
 
+# Personal cheat-sheet — holds real credentials/server details, stays local
+*.local.md
+
 # =========================
 # PYTHON (Backend)
 # =========================
