@@ -103,13 +103,75 @@ def _add_image(zf, img, arcname):
     return False
 
 
+class _ZipStreamBuffer:
+    """
+    Minimal file-like object for zipfile to write into. Deliberately reports
+    itself as non-seekable — zipfile detects that and automatically switches
+    to writing a trailing data descriptor per entry instead of a pre-filled
+    header (the header would otherwise need a backward seek to patch in the
+    CRC32/size once known). That's what makes true streaming possible here:
+    written bytes accumulate in `_chunks` and get drained by the generator
+    feeding StreamingResponse as the zip is built, so the whole archive is
+    never held in memory at once — only whatever hasn't reached the client
+    yet, regardless of how large the batch is.
+    """
+
+    def __init__(self):
+        self._chunks: list[bytes] = []
+        self._pos = 0
+
+    def write(self, data: bytes) -> int:
+        self._chunks.append(data)
+        self._pos += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seekable(self) -> bool:
+        return False
+
+    def flush(self) -> None:
+        pass
+
+    def drain(self) -> bytes:
+        data = b"".join(self._chunks)
+        self._chunks.clear()
+        return data
+
+
+def _zip_response(builder, filename: str) -> StreamingResponse:
+    """
+    `builder(zf)` does the actual writestr()/write() calls and yields
+    (no value needed) at each point it wants buffered bytes flushed to the
+    client — every format function below yields once per image, so peak
+    memory is bounded by one image plus whatever's briefly unflushed, not
+    the size of the whole export.
+    """
+    def generate():
+        stream = _ZipStreamBuffer()
+        with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as zf:
+            for _ in builder(zf):
+                chunk = stream.drain()
+                if chunk:
+                    yield chunk
+        chunk = stream.drain()  # central directory, written on context exit
+        if chunk:
+            yield chunk
+
+    return StreamingResponse(
+        generate(), media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/")
 async def export_annotations(
     payload: ExportRequest, user_id: CurrentUserID, db: DbDep
 ) -> StreamingResponse:
-    # Building the zip currently buffers everything in memory (see _yolo/_coco/etc
-    # below) — repeated large exports back-to-back is a real memory-exhaustion
-    # risk, not just abuse from outsiders.
+    # Each format streams the zip as it's built (see _zip_response below)
+    # rather than buffering the whole archive in memory, but the rate limit
+    # still guards against someone queuing many large exports back-to-back.
     await enforce_rate_limit(f"ratelimit:export:{user_id}", max_calls=10, window_seconds=300)
 
     batch, images, labels, annotations = await _load_batch_data(
@@ -132,11 +194,10 @@ async def export_annotations(
 
 
 def _yolo(batch, images, labels, annotations, split_map, include_images):
-    buf = io.BytesIO()
     id_to_idx = {lc_id: i for i, lc_id in enumerate(labels.keys())}
     names = [lc.name for lc in labels.values()]
 
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    def build(zf):
         # data.yaml — plug straight into yolo train data=data.yaml
         has_test = any(s == "test" for s in split_map.values())
         yaml = (
@@ -173,21 +234,19 @@ def _yolo(batch, images, labels, annotations, split_map, include_images):
                 ok = _add_image(zf, img, f"images/{split}/{stem}{ext}")
                 if not ok:
                     missing.append(img.filename)
+            yield
 
         if missing:
             zf.writestr("MISSING_IMAGES.txt", "\n".join(missing))
 
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="yolo_detection.zip"'})
+    return _zip_response(build, "yolo_detection.zip")
 
 
 def _yolo_seg(batch, images, labels, annotations, split_map, include_images):
-    buf = io.BytesIO()
     id_to_idx = {lc_id: i for i, lc_id in enumerate(labels.keys())}
     names = [lc.name for lc in labels.values()]
 
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    def build(zf):
         has_test = any(s == "test" for s in split_map.values())
         yaml = (
             f"path: .\ntrain: images/train\nval: images/val\n"
@@ -221,12 +280,11 @@ def _yolo_seg(batch, images, labels, annotations, split_map, include_images):
                 ok = _add_image(zf, img, f"images/{split}/{stem}{ext}")
                 if not ok:
                     missing.append(img.filename)
+            yield
         if missing:
             zf.writestr("MISSING_IMAGES.txt", "\n".join(missing))
 
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="yolo_segmentation.zip"'})
+    return _zip_response(build, "yolo_segmentation.zip")
 
 
 def _coco(batch, images, labels, annotations, include_images):
@@ -239,8 +297,7 @@ def _coco(batch, images, labels, annotations, include_images):
         ],
         "images": [], "annotations": [],
     }
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    def build(zf):
         ann_id = 1
         missing = []
         for img in images:
@@ -281,18 +338,18 @@ def _coco(batch, images, labels, annotations, include_images):
                     "segmentation": seg, "bbox": bbox, "area": area, "iscrowd": 0,
                 })
                 ann_id += 1
+            yield
+        # annotations.json needs every image's entry first, so it's written
+        # once at the end rather than incrementally like the other formats.
         zf.writestr("annotations.json", json.dumps(coco, indent=2))
         if missing:
             zf.writestr("MISSING_IMAGES.txt", "\n".join(missing))
 
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="coco_dataset.zip"'})
+    return _zip_response(build, "coco_dataset.zip")
 
 
 def _voc(images, labels, annotations, include_images):
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    def build(zf):
         label_map = ["item {\n  id: 0\n  name: '__background__'\n}"]
         for i, (lc_id, lc) in enumerate(labels.items(), 1):
             label_map.append(f"item {{\n  id: {i}\n  name: '{lc.name}'\n}}")
@@ -326,12 +383,11 @@ def _voc(images, labels, annotations, include_images):
                 ok = _add_image(zf, img, f"images/{safe_name}")
                 if not ok:
                     missing.append(img.filename)
+            yield
         if missing:
             zf.writestr("MISSING_IMAGES.txt", "\n".join(missing))
 
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="voc_dataset.zip"'})
+    return _zip_response(build, "voc_dataset.zip")
 
 
 def _csv(images, labels, annotations, include_images):
@@ -367,8 +423,7 @@ def _csv(images, labels, annotations, include_images):
         return StreamingResponse(io.BytesIO(content), media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="annotations.csv"'})
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    def build(zf):
         zf.writestr("annotations.csv", csv_buf.getvalue().encode("utf-8-sig"))
         missing = []
         for img in images:
@@ -377,8 +432,8 @@ def _csv(images, labels, annotations, include_images):
             ok = _add_image(zf, img, f"images/{img.id}_{img.filename}")
             if not ok:
                 missing.append(img.filename)
+            yield
         if missing:
             zf.writestr("MISSING_IMAGES.txt", "\n".join(missing))
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="csv_dataset.zip"'})
+
+    return _zip_response(build, "csv_dataset.zip")
