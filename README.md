@@ -72,8 +72,10 @@ Now edit both files:
   on first boot. Use a strong password here — there's currently no in-app "change my own password"
   option, only the email-based forgot/reset flow, so whatever you set here (or later reset it to) is
   what sticks.
-- `APP_URL` — the real address your team will reach it at (e.g. `http://192.168.1.50:5173`), **not**
-  `localhost` if this is a shared server. This gets embedded in every invite/reset email link.
+- `APP_URL` — the real address your team will reach it at (e.g. `https://lab.example.org`), **not**
+  `localhost` if this is a shared server. This gets embedded in every invite/reset email link. Use
+  `https://` and drop the port once you've enabled TLS (see below) — Caddy serves on the standard
+  443 port.
 - `SMTP_*` — optional, but without it invite/reset links only print to `docker compose logs backend`
   instead of emailing. Worth configuring before onboarding real people (see the SMTP note in
   [SECURITY.md](SECURITY.md) for the Gmail App Password setup used during development).
@@ -98,6 +100,38 @@ Images and models persist in `./storage/` on the host. Postgres and Redis are no
 host network — only the `backend` container can reach them — so `POSTGRES_PASSWORD`/`REDIS_PASSWORD`
 only need to be strong, not memorable. For admin access to the database directly, use
 `docker compose exec db psql -U marine marine_annotate` rather than exposing the port.
+
+The command above (`docker compose up`) runs everything over plain HTTP on `localhost:5173` — fine
+for local testing on one machine. Before a real lab uses this for real work, see **HTTPS / TLS**
+below — it's one flag away, not a separate setup.
+
+---
+
+## HTTPS / TLS
+
+Plain HTTP means passwords and session tokens cross the network unencrypted — fine on `localhost`,
+not fine the moment this is reachable by anyone else. A TLS-terminating reverse proxy ([Caddy](https://caddyserver.com/))
+is built in and disabled by default; enable it with one extra flag:
+
+```bash
+docker compose --profile tls up -d --build
+```
+
+Set `DOMAIN` in the root `.env` first:
+
+- **Real public domain** (e.g. `lab.example.org`) pointed at this server's IP → Caddy automatically
+  gets and renews a real Let's Encrypt certificate. Nothing else to configure.
+- **`localhost` or a bare IP** (internal-network-only lab, no public domain) → Caddy automatically
+  falls back to a locally-trusted self-signed certificate instead. Browsers show a one-time warning
+  until you trust Caddy's local root CA (or just click through — normal for internal tools).
+
+Once enabled, Caddy becomes the only network-facing entrance — the `backend` (`:8000`) and
+`frontend` (`:5173`) ports are bound to `127.0.0.1` only, so they're reachable for local debugging
+on the server itself but not from anywhere else, and there's no way to accidentally bypass HTTPS.
+
+If you're on an internal-only network and don't want to deal with certificates at all, a tunnel like
+[Tailscale](https://tailscale.com/) or a Cloudflare Tunnel is a reasonable alternative to the Caddy
+profile — see [SECURITY.md](SECURITY.md).
 
 ---
 

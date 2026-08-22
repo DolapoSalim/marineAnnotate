@@ -51,18 +51,25 @@ sure you're running the latest commit before reporting an issue.
   (cron/Task Scheduler) per deployment.
 - Security headers (CSP, X-Frame-Options, etc.) are set on both the API
   responses and the frontend's nginx-served static content.
+- **TLS is built in and one flag away**: `docker compose --profile tls up -d
+  --build` starts a [Caddy](https://caddyserver.com/) reverse proxy that
+  automatically gets a real Let's Encrypt certificate (if `DOMAIN` in the
+  root `.env` is a real public domain) or a locally-trusted self-signed one
+  (if it's `localhost`/an IP). Enabling it also binds `backend`/`frontend`'s
+  ports to `127.0.0.1` only, so Caddy becomes the sole network-facing
+  entrance — see the README's HTTPS / TLS section. Not enabled by default,
+  since a fresh `git clone` should work with zero certificate setup for
+  local testing.
 
 ## Deployment Security Checklist
 
 The above is handled by the code itself. What's still left to you as the
 operator, before exposing an instance beyond `localhost`:
 
-- **Put it behind TLS.** The bundled `docker-compose.yml`/`nginx.conf` serve
-  plain HTTP. Terminate TLS in front of it (a reverse proxy like Caddy or
-  nginx + Let's Encrypt, or a tunnel like Tailscale/Cloudflare Tunnel) before
-  any credentials or research data cross a network you don't control. This is
-  the biggest open item — until it's done, passwords and session tokens
-  travel in the clear.
+- **Actually enable the `tls` profile** (see above) or put a tunnel like
+  Tailscale/Cloudflare Tunnel in front instead — don't expose the default
+  plain-HTTP setup beyond your own machine. This is the single biggest thing
+  to not skip; everything else here assumes it's already true.
 - **Set a strong, unique `SECRET_KEY`** in `backend/.env` — generate one with
   `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Never reuse
   a value from `.env.example` or another deployment.
