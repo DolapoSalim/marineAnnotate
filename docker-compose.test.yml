@@ -1,0 +1,31 @@
+# Disposable Postgres + Redis for running the backend test suite locally.
+# Separate ports (5433/6380) and no named volumes (tmpfs data dir) so this
+# can never collide with, or be confused for, the real dev stack in
+# docker-compose.yml. Start with `docker compose -f docker-compose.test.yml
+# up -d`, run tests, then `down` — see scripts/run-tests.sh.
+services:
+  test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: marine_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d marine_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10

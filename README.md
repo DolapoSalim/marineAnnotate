@@ -1,5 +1,7 @@
 # MarineAnnotate
 
+[![Backend Tests](https://github.com/DolapoSalim/marineAnnotate/actions/workflows/backend-tests.yml/badge.svg)](https://github.com/DolapoSalim/marineAnnotate/actions/workflows/backend-tests.yml)
+
 In-house annotation platform for underwater marine imagery — seagrasses, macroalgae, and fish species.
 
 ## Features
@@ -140,6 +142,21 @@ profile — see [SECURITY.md](SECURITY.md).
 Auto-generated OpenAPI docs available at **http://localhost:8000/docs** — only when `DEBUG=true` in
 `backend/.env` (disabled by default, since exposing them is a minor information leak on a real
 deployment). Set `DEBUG=true` locally if you want to browse them.
+
+---
+
+## Testing
+
+A backend test suite (auth, sessions, permissions) runs automatically on every push/PR via GitHub
+Actions — see the badge at the top of this file. To run it locally against disposable, throwaway
+Postgres/Redis containers (never the real dev stack's data):
+
+```bash
+pip install -r backend/requirements-test.txt   # once
+./scripts/run-tests.sh                         # spins up test DB/Redis, runs pytest, tears down
+```
+
+Pass extra args straight through to pytest, e.g. `./scripts/run-tests.sh -k test_login -v`.
 
 ---
 
