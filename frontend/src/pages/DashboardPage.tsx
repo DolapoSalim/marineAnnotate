@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FolderOpen, Users, Image, LogOut, Shield } from 'lucide-react';
+import { Plus, FolderOpen, Users, Image, LogOut, Shield, Settings } from 'lucide-react';
 import { projectsApi } from '../api';
 import { useAuthStore } from '../store';
 import { Logo } from '../components/ui/Logo';
@@ -57,6 +57,9 @@ export const DashboardPage: React.FC = () => {
             <Shield size={13} /> Admin
           </button>
         )}
+        <button onClick={() => navigate('/settings')} style={{ ...ghostBtn, marginLeft: 8 }} title="Settings">
+          <Settings size={14} />
+        </button>
         <button onClick={clearAuth} style={{ ...ghostBtn, marginLeft: 8 }} title="Sign out">
           <LogOut size={14} />
         </button>

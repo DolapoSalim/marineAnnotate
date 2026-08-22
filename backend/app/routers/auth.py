@@ -28,6 +28,12 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
+def _password_strength(v: str) -> str:
+    if not any(c.isdigit() for c in v):
+        raise ValueError("Password must contain at least one digit")
+    return v
+
+
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=8)
@@ -35,9 +41,17 @@ class ResetPasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def password_strength(cls, v: str) -> str:
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit")
-        return v
+        return _password_strength(v)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _password_strength(v)
 
 
 async def _check_rate_limit(request: Request, email: str) -> None:
@@ -305,3 +319,44 @@ async def reset_password(payload: ResetPasswordRequest, request: Request, db: Db
     await log_event(db, "password_reset_completed", actor_user_id=user.id,
                      actor_email=user.email, ip_address=client_ip(request))
     return {"message": "Password updated — you can now sign in."}
+
+
+@router.post("/change-password", response_model=Token)
+async def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    response: Response,
+    user_id: CurrentUserID,
+    db: DbDep,
+) -> Token:
+    """
+    Self-service change while already logged in — the one gap left after the
+    email-based forgot/reset flow: there was previously no way to change your
+    own password without going through email at all.
+    """
+    user = await get_user(db, user_id)
+    if not user or not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    user.hashed_password = hash_password(payload.new_password)
+    # Bump token_version same as a reset — every OTHER session (other tabs,
+    # other devices) should die immediately. But unlike a reset, the user is
+    # sitting right here having just proven their identity, so hand back a
+    # fresh token pair instead of forcing them to log back in on this one.
+    user.token_version += 1
+    await db.commit()
+    await log_event(db, "password_changed", actor_user_id=user.id,
+                     actor_email=user.email, ip_address=client_ip(request))
+
+    access_token = create_access_token(str(user.id), user.token_version)
+    refresh_token = create_refresh_token(str(user.id), user.token_version)
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=_is_secure(request),
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        path="/api/auth",
+    )
+    return Token(access_token=access_token)

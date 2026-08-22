@@ -8,6 +8,7 @@ import { ProjectPage } from './pages/ProjectPage';
 import { ImageGalleryPage } from './pages/ImageGalleryPage';
 import { AnnotationPage } from './pages/AnnotationPage';
 import { AdminPage } from './pages/AdminPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/projects/:projectId/batches/:batchId/gallery" element={<ProtectedRoute><ImageGalleryPage /></ProtectedRoute>} />
           <Route path="/projects/:projectId/batches/:batchId/annotate" element={<ProtectedRoute><AnnotationPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminRoute><AdminPage /></AdminRoute></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

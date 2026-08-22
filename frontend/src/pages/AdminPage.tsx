@@ -11,6 +11,7 @@ const ACTION_LABELS: Record<string, string> = {
   login_failed: 'Failed sign-in attempt',
   password_reset_requested: 'Requested password reset',
   password_reset_completed: 'Reset password',
+  password_changed: 'Changed own password',
   invite_sent: 'Sent invite',
   invite_accepted: 'Accepted invite',
   user_created: 'Created user',

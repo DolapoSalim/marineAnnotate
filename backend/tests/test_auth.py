@@ -79,3 +79,47 @@ async def test_reset_password_rejects_invalid_token(client, admin_user):
         json={"token": "not-a-real-token", "new_password": "SomePassword123"},
     )
     assert r.status_code == 400
+
+
+async def test_change_password_rejects_wrong_current_password(client, admin_user):
+    token = await login(client, admin_user.email, ADMIN_PASSWORD)
+    r = await client.post(
+        "/api/auth/change-password",
+        json={"current_password": "wrong-password", "new_password": "NewPassword456"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 400
+
+
+async def test_change_password_updates_and_invalidates_other_sessions(client, admin_user):
+    """
+    Change-password should behave like reset-password for every OTHER
+    session (bump token_version, kill old tokens) but — unlike reset — hand
+    back a fresh token so THIS session doesn't get logged out by its own
+    request.
+    """
+    old_token = await login(client, admin_user.email, ADMIN_PASSWORD)
+
+    change_resp = await client.post(
+        "/api/auth/change-password",
+        json={"current_password": ADMIN_PASSWORD, "new_password": "NewPassword456"},
+        headers={"Authorization": f"Bearer {old_token}"},
+    )
+    assert change_resp.status_code == 200
+    new_token = change_resp.json()["access_token"]
+
+    # The token used to make the change request is now stale (same as any
+    # other pre-change session) ...
+    old_check = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {old_token}"})
+    assert old_check.status_code == 401
+
+    # ... but the fresh token handed back in the response still works.
+    new_check = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {new_token}"})
+    assert new_check.status_code == 200
+
+    # And the new password actually took effect.
+    relogin = await client.post(
+        "/api/auth/token",
+        data={"username": admin_user.email, "password": "NewPassword456"},
+    )
+    assert relogin.status_code == 200
