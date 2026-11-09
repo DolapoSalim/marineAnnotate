@@ -104,6 +104,9 @@ docker compose up --build -d
 open http://localhost:5173   # or your server's address
 ```
 
+By default this runs AI inference on the **CPU**, which works on any machine. If the server has an
+NVIDIA GPU, see [CPU or GPU?](#cpu-or-gpu) just below; it's a two-line change.
+
 Log in with the `FIRST_ADMIN_EMAIL`/`FIRST_ADMIN_PASSWORD` you set above — see
 [Inviting Lab Members](#inviting-lab-members) below for onboarding the rest of the team.
 
@@ -115,6 +118,62 @@ only need to be strong, not memorable. For admin access to the database directly
 The command above (`docker compose up`) runs everything over plain HTTP on `localhost:5173` — fine
 for local testing on one machine. Before a real lab uses this for real work, see **HTTPS / TLS**
 below — it's one flag away, not a separate setup.
+
+### CPU or GPU?
+
+The GPU only affects **AI-assisted labelling** (running your uploaded YOLO model on a batch of
+images). Annotating, reviewing, exporting and everything else work the same either way.
+
+| Your machine | What to do |
+| --- | --- |
+| No GPU, or an AMD/Intel GPU, or a Mac | Nothing. The default setup above is already right. |
+| NVIDIA GPU | Follow the three steps below. |
+
+The default build installs CPU-only PyTorch (about 3GB image). The GPU build installs CUDA PyTorch
+(about 10GB image), so only use it when there's an NVIDIA GPU to run it on.
+
+**Using an NVIDIA GPU:**
+
+1. **Make the GPU available to Docker** (one-time, outside this project):
+   - **Linux:** install the NVIDIA driver and the
+     [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
+     then restart Docker. Check with `docker run --rm --gpus all ubuntu nvidia-smi`. It should list
+     your GPU.
+   - **Windows:** install the latest NVIDIA driver and use Docker Desktop with the WSL 2 backend
+     (the default). Nothing else to install.
+   - **macOS:** not supported (Docker on a Mac can't use the GPU). Use the default CPU setup.
+
+2. **Turn on GPU mode** by adding these two lines to the root `.env`:
+
+   ```bash
+   COMPOSE_FILE=docker-compose.yml,docker-compose.gpu.yml
+   COMPOSE_PATH_SEPARATOR=,
+   ```
+
+   This tells every `docker compose` command (including the `--profile tls` / `--profile tunnel`
+   commands and the scripts in `scripts/`) to include
+   [docker-compose.gpu.yml](docker-compose.gpu.yml), so you never need extra flags.
+
+3. **Rebuild:**
+
+   ```bash
+   docker compose up --build -d
+   ```
+
+**Check which mode you're in** (works for both):
+
+```bash
+docker compose exec celery_worker python -c "import torch; print(torch.__version__, '| GPU:', torch.cuda.is_available())"
+```
+
+- `2.3.0+cpu | GPU: False` means CPU mode.
+- `2.3.0+cu121 | GPU: True` means GPU mode, working.
+- `2.3.0+cu121 | GPU: False` means the GPU build is installed but Docker can't see the GPU. Go back
+  to step 1. Inference still runs on the CPU in the meantime, so nothing breaks.
+
+**Switching back to CPU:** delete the two lines from `.env` and run `docker compose up --build -d`
+again. Always include `--build` when switching in either direction, because the CPU and GPU builds
+use the same image name.
 
 ---
 

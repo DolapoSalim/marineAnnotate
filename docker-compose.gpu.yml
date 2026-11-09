@@ -1,0 +1,30 @@
+# Override for hosts with an NVIDIA GPU. The default build installs CPU-only
+# PyTorch (see backend/Dockerfile); this swaps in the CUDA build and gives the
+# Celery worker — where inference actually runs — access to the GPU.
+#
+# Requires the NVIDIA driver plus the NVIDIA Container Toolkit on Linux, or
+# Docker Desktop with the WSL 2 backend on Windows. Don't pass this file with
+# -f by hand. Enable it once in the root .env so every compose command (and
+# the scripts/ helpers) picks it up:
+#   COMPOSE_FILE=docker-compose.yml,docker-compose.gpu.yml
+#   COMPOSE_PATH_SEPARATOR=,
+# then run `docker compose up --build -d`. See "CPU or GPU?" in the README.
+# Check the GPU is visible with:
+#   docker compose exec celery_worker python -c "import torch; print(torch.cuda.is_available())"
+services:
+  backend:
+    build:
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu121
+
+  celery_worker:
+    build:
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cu121
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
